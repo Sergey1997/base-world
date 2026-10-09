@@ -206,7 +206,7 @@ export function windowMaterial() {
       .replace("#include <common>", "#include <common>\nvarying vec3 vWPos; varying vec3 vWNormal;")
       .replace(
         "#include <project_vertex>",
-        "#include <project_vertex>\n#ifdef USE_INSTANCING\nmat4 im = modelMatrix * instanceMatrix;\n#else\nmat4 im = modelMatrix;\n#endif\nvWPos = (im * vec4(transformed, 1.0)).xyz; vWNormal = normalize(mat3(im) * objectNormal);",
+        "#include <project_vertex>\n#ifdef USE_INSTANCING\nmat4 wm = modelMatrix * instanceMatrix;\n#else\nmat4 wm = modelMatrix;\n#endif\nvWPos = (wm * vec4(transformed, 1.0)).xyz; vWNormal = normalize(mat3(wm) * objectNormal);",
       );
     shader.fragmentShader = shader.fragmentShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vWPos; varying vec3 vWNormal;\nfloat whash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }")

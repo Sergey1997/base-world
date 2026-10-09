@@ -63,7 +63,7 @@ function Floor({ center, radius, color, rings = 3, y = 0.06 }: { center: [number
     <group position={[center[0], y, center[1]]}>
       <mesh rotation-x={-Math.PI / 2} receiveShadow>
         <circleGeometry args={[radius, 64]} />
-        <meshStandardMaterial color="#0c1a45" roughness={0.45} metalness={0.4} />
+        <meshStandardMaterial color="#0c1a45" roughness={0.8} metalness={0.2} />
       </mesh>
       {Array.from({ length: rings }, (_, i) => (
         <mesh key={i} rotation-x={-Math.PI / 2} position-y={0.02}>
