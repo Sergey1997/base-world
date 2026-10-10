@@ -11,7 +11,7 @@ export function PlayOnline() {
   const card = (
     <>
       <b>Play online</b>
-      <span>Sign in with X, Google, email or a wallet. One shared world, cloud saves, real Base transactions from your wallet.</span>
+      <span>Sign in. Shared world. Real txs.</span>
     </>
   );
   if (!PRIVY_ID) {

@@ -13,12 +13,12 @@ export default function Home() {
           <img src="/world/brands/base.png" alt="" width={20} height={20} /> Built on Base
         </p>
         <h1>BASE WORLD</h1>
-        <p className={styles.tagline}>An open world for the Base ecosystem. Fly between Aerodrome, Virtuals, Morpho, Uniswap, Aave and Bankr, take on quests and meet the agents.</p>
+        <p className={styles.tagline}>Quests, agents, and DeFi — on Base.</p>
         {/* Full page loads on purpose: each mode boots the game store with its own save and chain. */}
         <div className={styles.modes}>
           <a href="/offline" className={styles.mode}>
             <b>Play offline</b>
-            <span>Jump straight in. No account, progress stays in this browser, every transaction is simulated.</span>
+            <span>No sign-in. Local save. Simulated.</span>
           </a>
           <PlayOnline />
         </div>
