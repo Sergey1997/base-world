@@ -33,11 +33,20 @@ export function Districts() {
 }
 
 export function Sign({ position, text, sub, color, size = 4, logo }: { position: Vec3; text: string; sub?: string; color: string; size?: number; logo?: string }) {
+  const r = size * 0.32;
   return (
     <Billboard position={position} lockX lockZ>
       {logo && (
-        <group position={[0, size * 0.85, 0]}>
-          <BrandDisc src={logo} radius={size * 0.55} />
+        <group position={[0, size * 1.55, 0]}>
+          <mesh position={[0, 0, -0.04]}>
+            <circleGeometry args={[r * 1.2, 48]} />
+            <meshBasicMaterial color="#07102c" toneMapped={false} />
+          </mesh>
+          <mesh position={[0, 0, -0.02]}>
+            <ringGeometry args={[r * 1.08, r * 1.22, 48]} />
+            <meshBasicMaterial color={glow(color, 1.8)} toneMapped={false} side={DoubleSide} />
+          </mesh>
+          <BrandDisc src={logo} radius={r} />
         </group>
       )}
       <Text font={FONT} fontSize={size} letterSpacing={-0.02} anchorY="bottom" outlineWidth={size * 0.04} outlineColor="#020616">

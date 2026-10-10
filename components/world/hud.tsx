@@ -110,7 +110,7 @@ function Status() {
   return (
     <div className={styles.status}>
       <div className={styles.wallet}>
-        {(Object.keys(wallet) as Token[]).map((t) => (
+        {(["ETH", "USDC", "AERO", "VIRTUAL"] as Token[]).map((t) => (
           <span key={t} style={{ color: tokens[t].color }}>
             {fmt(wallet[t])} <small>{t}</small>
           </span>

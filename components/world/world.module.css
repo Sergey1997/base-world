@@ -219,14 +219,18 @@
 
 .wallet {
   composes: frame;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  padding: 7px 12px;
-  max-width: 250px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 12px;
+  width: 260px;
+  padding: 8px 12px;
   box-sizing: border-box;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.root:has([data-dock="wallet"]) .status .wallet {
+  display: none;
 }
 
 .wallet small {

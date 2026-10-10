@@ -118,7 +118,10 @@ function World({ session, wallet }: { session: Live; wallet: ConnectedWallet }) 
 function WalletBar({ me, look, flush, wallet, onSettings }: { me: Peer; look: Live["look"]; flush: () => Promise<void>; wallet: ConnectedWallet; onSettings: () => void }) {
   const peers = usePeers();
   const sync = useGame((s) => s.sync);
-  const eth = useGame((s) => holdings(s).wallet.ETH);
+  const bags = useGame((s) => holdings(s).wallet);
+  const lp = useGame((s) => holdings(s).lp);
+  const veAero = useGame((s) => s.veAero);
+  const eth = bags.ETH;
   const last = useGame((s) => s.txs.find((t) => t.explorer));
   const { fundWallet } = useFundWallet({ onUserExited: () => void sync() });
   const [open, setOpen] = useState(false);
@@ -131,7 +134,24 @@ function WalletBar({ me, look, flush, wallet, onSettings }: { me: Peer; look: Li
   }, [sync]);
 
   return (
-    <div className={styles.bar}>
+    <div className={styles.bar} data-dock="wallet">
+      <div className={styles.bags}>
+        {(["ETH", "USDC", "AERO", "VIRTUAL"] as Token[]).map((t) => (
+          <span key={t} style={{ color: tokens[t].color }}>
+            {fmt(bags[t])} <small>{t}</small>
+          </span>
+        ))}
+        {lp > 0 && (
+          <span>
+            {fmt(lp)} <small>LP</small>
+          </span>
+        )}
+        {veAero > 0 && (
+          <span>
+            {fmt(veAero)} <small>veAERO</small>
+          </span>
+        )}
+      </div>
       <div className={styles.who}>
         <Avatar className={styles.face} src={look.avatar} seed={`${me.id}:${look.seed}`} size={34} />
         <div className={styles.id}>
