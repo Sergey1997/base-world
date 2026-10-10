@@ -27,8 +27,10 @@ export function useKeyboard() {
       if (!e.repeat) pressed.add(e.code);
       keys.add(e.code);
       const g = useGame.getState();
-      if (e.code === "KeyE" && !e.repeat) g.dialog || g.panel ? g.close() : g.interact();
+      if (e.code === "KeyE" && !e.repeat) g.dialog || g.panel || g.mapOpen ? g.close() : g.interact();
       if ((e.code === "KeyJ" || e.code === "Tab") && !e.repeat && g.started) g.toggleLog();
+      if (e.code === "KeyB" && !e.repeat && g.started) g.toggleDocs();
+      if (e.code === "KeyM" && !e.repeat && g.started) g.toggleMap();
     };
     const up = (e: KeyboardEvent) => keys.delete(e.code);
     const blur = () => keys.clear();

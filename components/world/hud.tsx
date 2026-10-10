@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { bankerPrompts, suggestedPrompts } from "./agents";
+import { bankerPrompts, gekkoPrompts, suggestedPrompts } from "./agents";
+import { toggleSound, useSoundOn } from "./audio";
 import { fmt, type Token, tokens } from "./chain";
-import { districts, npcs, palette, RACE, roads, stations } from "./config";
+import { districts, jumpPads, npcs, palette, RACE, roads, stations } from "./config";
+import { atlasCaptions, layoutCaptions } from "./map-labels";
+import { WorldMap } from "./map";
 import { Panel } from "./panels";
 import { levelFor, questById, quests } from "./quests";
-import { districtName, live, rewardText, useGame, waypoint } from "./store";
+import { districtName, holdings, live, rewardText, useGame, waypoint } from "./store";
 import styles from "./world.module.css";
 
 /** Runs `cb` every animation frame; for HUD readouts that follow `live` without re-rendering. */
@@ -34,6 +37,7 @@ export function Hud() {
   const dialog = useGame((s) => s.dialog);
   const panel = useGame((s) => s.panel);
   const logOpen = useGame((s) => s.logOpen);
+  const mapOpen = useGame((s) => s.mapOpen);
   if (!started) return <Intro />;
   return (
     <div className={styles.hud}>
@@ -42,12 +46,14 @@ export function Hud() {
       <Tracker />
       <RaceTimer />
       <Speedometer />
+      <SoundToggle />
       <Prompt />
       <Toasts />
-      <div className={styles.help}>WASD move · Shift boost · Q dash · Space jump ×2 · E interact · J quests · drag to look</div>
+      <div className={styles.help}>WASD move · Shift boost · Q dash · Space jump ×2 · E interact · J quests · M map · B Base docs · drag to look</div>
       {dialog && <Dialog key={dialog} id={dialog} />}
       {panel && <Panel key={panel} id={panel} />}
       {logOpen && <QuestLog />}
+      {mapOpen && <WorldMap />}
     </div>
   );
 }
@@ -55,11 +61,17 @@ export function Hud() {
 function Intro() {
   const start = useGame((s) => s.start);
   const xp = useGame((s) => s.xp);
+  const online = useGame((s) => !!s.real);
   return (
     <div className={styles.intro}>
       <div className={styles.introCard}>
         <h1>BASE WORLD</h1>
-        <p>A fast, stylized open world for the Base ecosystem. Explore protocol districts, take on quests and talk to AI agents — every onchain action is simulated.</p>
+        <p>
+          A fast, stylized open world for the Base ecosystem. Explore protocol districts, take on quests and talk to AI agents —{" "}
+          {online
+            ? "swaps, liquidity, Morpho and Aave run on Base mainnet from your wallet (max $50 per transaction); everything else uses game credits."
+            : "every onchain action is simulated."}
+        </p>
         <div className={styles.controls}>
           {[
             ["WASD", "Move"],
@@ -68,6 +80,8 @@ function Intro() {
             ["Space", "Jump / double jump"],
             ["E", "Talk · use terminals"],
             ["J / Tab", "Quest log"],
+            ["M", "World map"],
+            ["B", "Base docs"],
             ["Drag · Wheel", "Look · zoom"],
             ["Esc", "Close"],
           ].map(([k, v]) => (
@@ -80,6 +94,9 @@ function Intro() {
         <button className={styles.primary} onClick={start} autoFocus>
           {xp > 0 ? "Continue" : "Play"}
         </button>
+        <a className={styles.menu} href="/">
+          ← {online ? "Online" : "Offline"} mode · back to menu
+        </a>
       </div>
     </div>
   );
@@ -87,9 +104,9 @@ function Intro() {
 
 function Status() {
   const xp = useGame((s) => s.xp);
-  const wallet = useGame((s) => s.wallet);
-  const lp = useGame((s) => s.lp);
-  const veSky = useGame((s) => s.veSky);
+  const wallet = useGame((s) => holdings(s).wallet);
+  const lp = useGame((s) => holdings(s).lp);
+  const veAero = useGame((s) => s.veAero);
   const district = useGame((s) => s.district);
   const { level, progress } = levelFor(xp);
   return (
@@ -116,9 +133,9 @@ function Status() {
             {fmt(lp)} <small>LP</small>
           </span>
         )}
-        {veSky > 0 && (
+        {veAero > 0 && (
           <span>
-            {fmt(veSky)} <small>veSKY</small>
+            {fmt(veAero)} <small>veAERO</small>
           </span>
         )}
       </div>
@@ -166,25 +183,64 @@ function Minimap() {
       const [x, y] = to(...d.center);
       ctx.beginPath();
       ctx.arc(x, y, d.radius * k, 0, Math.PI * 2);
-      ctx.fillStyle = `${d.color}33`;
+      ctx.fillStyle = `${d.color}22`;
       ctx.fill();
-      ctx.strokeStyle = `${d.color}aa`;
-      ctx.lineWidth = 1;
-      ctx.stroke();
     }
     for (const st of stations) {
       const [x, y] = to(st.position[0], st.position[2]);
       ctx.fillStyle = st.color;
-      ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, y + 4);
+      ctx.arc(x, y - 1.5, 3.2, 0.85, Math.PI - 0.85);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
     }
-    const givers = new Set(quests.filter((q) => s.quests[q.id].status === "available").map((q) => q.giver));
+    const givers = new Set(quests.filter((q) => s.quests[q.id]?.status === "available").map((q) => q.giver));
     for (const n of npcs) {
+      if (n.kind !== "human" && !givers.has(n.id)) continue;
       const [x, y] = to(n.position[0], n.position[2]);
       const offer = givers.has(n.id);
       ctx.beginPath();
-      ctx.arc(x, y, offer ? 3.5 : 2, 0, Math.PI * 2);
+      ctx.arc(x, y, offer ? 3.6 : 3, 0, Math.PI * 2);
       ctx.fillStyle = offer ? palette.gold : "#dce8ff";
       ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    for (const p of jumpPads) {
+      const [x, y] = to(p.position[0], p.position[2]);
+      ctx.beginPath();
+      ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+      ctx.strokeStyle = palette.cyan;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+    {
+      const [x, y] = to(RACE.rings[0][0], RACE.rings[0][2]);
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = palette.gold;
+      ctx.fill();
+    }
+
+    const u = 1 / k;
+    const visible = atlasCaptions(givers).filter((c) => Math.hypot(c.x - px, c.z - pz) < MAP_RANGE + 36);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#050b24";
+    for (const cap of layoutCaptions(visible, u)) {
+      const [x, y] = to(cap.x + cap.ox * u, cap.z + cap.oy * u);
+      if (Math.hypot(x - c, y - c) > c - 6) continue;
+      ctx.font = cap.kind === "district" ? "700 8px Unbounded, system-ui, sans-serif" : "600 7px system-ui, sans-serif";
+      ctx.strokeText(cap.text, x, y);
+      ctx.fillStyle = cap.fill ?? "#f4f7ff";
+      ctx.fillText(cap.text, x, y);
     }
 
     const wp = waypoint(s, live.pos);
@@ -193,7 +249,17 @@ function Minimap() {
       const dx = x - c;
       const dy = y - c;
       const r = Math.hypot(dx, dy);
-      if (r > c - 10) [x, y] = [c + (dx / r) * (c - 10), c + (dy / r) * (c - 10)];
+      if (r > c - 14) [x, y] = [c + (dx / r) * (c - 14), c + (dy / r) * (c - 14)];
+      ctx.beginPath();
+      ctx.moveTo(c, c);
+      ctx.lineTo(x, y);
+      ctx.strokeStyle = palette.gold;
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([4, 3]);
+      ctx.globalAlpha = 0.8;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(Math.PI / 4);
@@ -203,6 +269,15 @@ function Minimap() {
       ctx.fillRect(-4.5, -4.5, 9, 9);
       ctx.strokeRect(-4.5, -4.5, 9, 9);
       ctx.restore();
+      const ly = y + (y > c + 40 ? -12 : 12);
+      if (Math.hypot(x - c, ly - c) < c - 6) {
+        ctx.font = "700 7px Unbounded, system-ui, sans-serif";
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#050b24";
+        ctx.fillStyle = palette.gold;
+        ctx.strokeText("Next", x, ly);
+        ctx.fillText("Next", x, ly);
+      }
     }
 
     ctx.translate(c, c);
@@ -217,11 +292,12 @@ function Minimap() {
     ctx.fill();
     ctx.restore();
   });
+  const open = useGame((s) => s.toggleMap);
   return (
-    <div className={styles.minimap}>
+    <button className={styles.minimap} onClick={open} onMouseDown={(e) => e.preventDefault()} title="World map (M)">
       <canvas ref={canvas} style={{ width: MAP, height: MAP }} />
       <span className={styles.north}>N</span>
-    </div>
+    </button>
   );
 }
 
@@ -275,6 +351,16 @@ function RaceTimer() {
   );
 }
 
+function SoundToggle() {
+  const on = useSoundOn();
+  return (
+    // No focus on click, so Space keeps jumping instead of re-pressing the button.
+    <button className={styles.sound} onClick={toggleSound} onMouseDown={(e) => e.preventDefault()} data-on={on ? "1" : ""} title="Sound">
+      {on ? "♪ Sound on" : "♪ Muted"}
+    </button>
+  );
+}
+
 function Speedometer() {
   const speed = useRef<HTMLSpanElement>(null);
   const dash = useRef<HTMLElement>(null);
@@ -299,7 +385,7 @@ function Speedometer() {
 
 function Prompt() {
   const nearby = useGame((s) => s.nearby);
-  const busy = useGame((s) => !!s.dialog || !!s.panel || s.logOpen);
+  const busy = useGame((s) => !!s.dialog || !!s.panel || s.logOpen || s.mapOpen);
   if (!nearby || busy) return null;
   const npc = npcs.find((n) => n.id === nearby);
   const station = stations.find((s) => s.id === nearby);
@@ -336,8 +422,8 @@ function Dialog({ id }: { id: string }) {
   );
   const [greeting] = useState(() => npc.greeting[Math.floor(Math.random() * npc.greeting.length)]);
   const mine = quests.filter((q) => q.giver === id);
-  const offer = mine.find((q) => status[q.id].status === "available");
-  const active = mine.find((q) => status[q.id].status === "active" && q.id !== justDone?.id);
+  const offer = mine.find((q) => status[q.id]?.status === "available");
+  const active = mine.find((q) => status[q.id]?.status === "active" && q.id !== justDone?.id);
 
   const lines = justDone?.giver === id ? [justDone.done] : [];
   if (offer) lines.push(offer.offer);
@@ -347,9 +433,25 @@ function Dialog({ id }: { id: string }) {
   return (
     <div className={styles.modal} data-side={npc.kind === "agent" ? "chat" : undefined}>
       <header>
-        <div>
-          <h2 style={{ color: npc.color }}>{npc.name}</h2>
-          <small>{npc.title}</small>
+        <div className={styles.who}>
+          {npc.photo && <img className={styles.avatar} src={npc.photo} alt={npc.name} />}
+          <div>
+            <h2 style={{ color: npc.color }}>{npc.name}</h2>
+            <small>{npc.title}</small>
+            <div className={styles.socials}>
+              {npc.twitter && (
+                <a href={`https://x.com/${npc.twitter}`} target="_blank" rel="noreferrer">
+                  @{npc.twitter}
+                </a>
+              )}
+              {npc.ens && <span>{npc.ens}</span>}
+              {npc.url && (
+                <a href={npc.url} target="_blank" rel="noreferrer">
+                  {host(npc.url)}
+                </a>
+              )}
+            </div>
+          </div>
         </div>
         <button className={styles.close} onClick={close} aria-label="Close">
           ×
@@ -372,7 +474,13 @@ function Dialog({ id }: { id: string }) {
           </button>
         </div>
       )}
-      {npc.kind === "agent" && <Chat id={id} greeting={npc.greeting[0]} prompts={npc.persona === "banker" ? bankerPrompts : suggestedPrompts} />}
+      {npc.kind === "agent" && (
+        <Chat
+          id={id}
+          greeting={npc.greeting[0]}
+          prompts={npc.persona === "banker" ? bankerPrompts : npc.persona === "gekko" ? gekkoPrompts : suggestedPrompts}
+        />
+      )}
       {npc.kind === "human" && !offer && (
         <button className={styles.secondary} onClick={close}>
           See you around
@@ -438,7 +546,7 @@ function QuestLog() {
   const badges = useGame((s) => s.badges);
   const best = useGame((s) => s.bestRace);
   const [confirm, setConfirm] = useState(false);
-  const done = quests.filter((q) => status[q.id].status === "done").length;
+  const done = quests.filter((q) => status[q.id]?.status === "done").length;
   return (
     <div className={styles.modal} data-wide>
       <header>
@@ -455,7 +563,7 @@ function QuestLog() {
       </header>
       <div className={styles.quests}>
         {quests.map((q) => {
-          const st = status[q.id];
+          const st = status[q.id] ?? { status: "locked" as const, progress: {} };
           const giver = npcs.find((n) => n.id === q.giver)?.name;
           return (
             <div key={q.id} className={styles.quest} data-status={st.status} data-tracked={tracked === q.id || undefined}>
@@ -509,4 +617,12 @@ function QuestLog() {
       </footer>
     </div>
   );
+}
+
+function host(url: string) {
+  try {
+    return new URL(url).host.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }

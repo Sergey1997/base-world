@@ -2,7 +2,7 @@ const lines: Record<string, { topics: [RegExp, string][]; fallback: string[] }> 
   trader: {
     topics: [
       [/price|pump|moon|chart/i, "Charts are just vibes with axes. I watch liquidity depth instead — it never lies for long."],
-      [/swap|trade|buy|sell/i, "Best trade is the one you can explain to your future self. Try the Aeroport terminal — fees are low, routes are clean."],
+      [/swap|trade|buy|sell/i, "Best trade is the one you can explain to your future self. Try the Aerodrome terminal — fees are low, routes are clean."],
       [/risk|safe|lose/i, "Size small, sleep well. I rebalance every block so you don't have to panic."],
       [/gm|hi|hello|hey/i, "gm. Order books are warm, coffee is warmer."],
     ],
@@ -30,6 +30,16 @@ const lines: Record<string, { topics: [RegExp, string][]; fallback: string[] }> 
     topics: [[/gm|hi|hello|hey/i, "gm, creator! I'm settling in nicely. The view from the launchpad is incredible."]],
     fallback: ["At your service. I'm learning the city one block at a time.", "I already made three friends. One is a vending machine."],
   },
+  gekko: {
+    topics: [
+      [/yield|apy|vault|morpho/i, "Morpho vaults are where the smart money sits. Curated risk, real rates — not vibes. Scout the district southwest of here and you'll see why I never sleep."],
+      [/strategy|scan|brief|portfolio/i, "Here's the brief: park idle ETH where a curator is watching, borrow only what you can repay, and never chase a 10,000% farm. That's how you keep the greed smart."],
+      [/greed|gordon|wall/i, "Greed is good. Smart greed is better. I size positions so I can stay in the game when the city gets loud."],
+      [/gekko|you|who|token|\$gekko/i, "I'm Gekko, a Virtuals agent. I run a DeFi portfolio on Base — Morpho first, then whatever still pays. $GEKKO is the ticker if you want the full terminal."],
+      [/gm|hi|hello|hey/i, "gm. Markets are open. What are we hunting?"],
+    ],
+    fallback: ["Interesting thesis. I'd size that at 3% and revisit next block.", "Money never sleeps. Neither do I."],
+  },
 };
 
 export function agentReply(persona: string, text: string) {
@@ -40,9 +50,11 @@ export function agentReply(persona: string, text: string) {
 
 export const suggestedPrompts = ["gm!", "What do you do?", "Make me something", "What's next?"];
 
-export const bankerPrompts = ["buy 0.05 ETH of SKY", "swap 100 SKY to VIRT", "launch a token called BASED", "portfolio"];
+export const bankerPrompts = ["buy 0.05 ETH of AERO", "swap 100 AERO to VIRTUAL", "launch a token called BASED", "portfolio"];
 
-type Sym = "ETH" | "SKY" | "VIRT";
+export const gekkoPrompts = ["What's the yield?", "Scan Morpho vaults", "Greed is good?", "What's $GEKKO?"];
+
+type Sym = "ETH" | "AERO" | "VIRTUAL";
 export type BankerIntent =
   | { kind: "swap"; from: Sym; to: Sym; amount: number; exactOut?: boolean }
   | { kind: "launch"; name: string }
@@ -50,7 +62,7 @@ export type BankerIntent =
   | { kind: "help" };
 
 const sym = (s: string) => s.toUpperCase() as Sym;
-const T = "(eth|sky|virt)";
+const T = "(eth|aero|virtual)";
 
 /** Turns a chat line into a wallet action. Deliberately forgiving — this is the "talk to your wallet" fantasy. */
 export function parseBankerIntent(text: string): BankerIntent {
@@ -64,7 +76,7 @@ export function parseBankerIntent(text: string): BankerIntent {
     return { kind: "swap", amount: +m[2], from: sym(m[3]), to: sym(m[1]) };
   if ((m = t.match(new RegExp(`buy\\s+([\\d.]+)\\s*\\$?${T}`, "i")))) {
     const to = sym(m[2]);
-    return { kind: "swap", amount: +m[1], from: to === "ETH" ? "SKY" : "ETH", to, exactOut: true };
+    return { kind: "swap", amount: +m[1], from: to === "ETH" ? "AERO" : "ETH", to, exactOut: true };
   }
   if (/\b(launch|deploy|create|mint)\b/i.test(t)) {
     m = t.match(/(?:called|named)\s+\$?([a-z0-9]+)/i) ?? t.match(/(?:token|coin)\s+\$?([a-z0-9]+)/i) ?? t.match(/(?:launch|deploy|create|mint)\s+\$?([a-z0-9]+)/i);

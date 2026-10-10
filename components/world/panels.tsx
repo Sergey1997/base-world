@@ -2,45 +2,71 @@
 
 import { useEffect, useState } from "react";
 import { personas } from "./agents";
-import { fmt, hooks, LIQUIDATION_LTV, type Token, tokens } from "./chain";
+import { fmt, hooks, type Token, tokens, type Venue, venues } from "./chain";
+import { useShallow } from "zustand/react/shallow";
 import type { PanelId } from "./config";
-import { chain, healthFactor, LAUNCH_COST, useGame, VAULT_NAME } from "./store";
+import { docById, docs } from "./docs";
+import { quests } from "./quests";
+import { chain, healthFactor, holdings, LAUNCH_COST, useGame } from "./store";
 import styles from "./world.module.css";
 
 const TOKENS = Object.keys(tokens) as Token[];
-const GAUGES = ["ETH/SKY", "SKY/VIRT", "ETH/CASH", "VIRT/CASH"];
-const AERO: PanelId[] = ["swap", "pool", "vote"];
+const GAUGES = ["ETH/AERO", "AERO/VIRTUAL", "ETH/USDC", "VIRTUAL/USDC"];
+const GROUPS: PanelId[][] = [
+  ["swap", "pool", "vote"],
+  ["flash", "aave"],
+];
+/** Panels that spend the connected wallet in online mode; the rest stay simulated. */
+const REAL: PanelId[] = ["swap", "pool", "lend", "aave"];
+
+const logos: Record<PanelId, string> = {
+  swap: "/world/brands/aerodrome.png",
+  pool: "/world/brands/aerodrome.png",
+  vote: "/world/brands/aerodrome.png",
+  launch: "/world/brands/virtuals.png",
+  lend: "/world/brands/morpho.png",
+  hooks: "/world/brands/uniswap.png",
+  flash: "/world/brands/aave.png",
+  aave: "/world/brands/aave.png",
+  docs: "/world/brands/base.png",
+};
 
 const titles: Record<PanelId, [string, string]> = {
-  swap: ["Swap Terminal", "Aeroport · route any pair"],
-  pool: ["Liquidity Pool", "Aeroport · ETH/SKY"],
-  vote: ["Gauge Voting Booth", "Aeroport · lock SKY, steer emissions"],
-  launch: ["Agent Launchpad", "Virtua · bring an agent to life"],
-  lend: [VAULT_NAME, "Vault Quarter · supply, borrow, repay"],
-  hooks: ["Hook Stall", "Hook Bazaar · swaps with custom rules"],
-  flash: ["Flash Loan Counter", "Ghost Bank · one block, no collateral"],
+  swap: ["Swap Terminal", "Aerodrome · route any pair"],
+  pool: ["Liquidity Pool", "Aerodrome · ETH/AERO"],
+  vote: ["Gauge Voting Booth", "Aerodrome · lock AERO, steer emissions"],
+  launch: ["Agent Launchpad", "Virtuals · bring an agent to life"],
+  lend: [venues.morpho.name, "Morpho · supply, borrow, repay"],
+  hooks: ["Uniswap Hook", "Uniswap · swaps with custom rules"],
+  flash: ["Aave Flash Loan", "Aave · one block, no collateral"],
+  aave: [venues.aave.name, "Aave V3 · supply ETH, borrow USDC"],
+  docs: ["Base Docs", "The short version of docs.base.org"],
 };
 
 export function Panel({ id }: { id: PanelId }) {
   const close = useGame((s) => s.close);
+  const online = useGame((s) => !!s.real);
   const [tab, setTab] = useState(id);
   const [title, sub] = titles[tab];
+  const group = GROUPS.find((g) => g.includes(id));
+  const network = online && !REAL.includes(tab) ? "simulated · game credits" : chain.network;
   return (
-    <div className={styles.modal}>
+    <div className={styles.modal} data-wide={id === "docs" || undefined}>
       <header>
-        <div>
+        <div className={styles.who}>
+          <img className={styles.avatar} src={logos[tab]} alt="" />
+          <div>
           <h2>{title}</h2>
-          <small>
-            {sub} · {chain.network}
-          </small>
+          <small>{tab === "docs" ? sub : `${sub} · ${network}`}</small>
+          </div>
         </div>
         <button className={styles.close} onClick={close} aria-label="Close">
           ×
         </button>
       </header>
-      {AERO.includes(id) && (
+      {group && (
         <nav className={styles.tabs}>
-          {AERO.map((t) => (
+          {group.map((t) => (
             <button key={t} data-active={t === tab || undefined} onClick={() => setTab(t)}>
               {t}
             </button>
@@ -51,9 +77,96 @@ export function Panel({ id }: { id: PanelId }) {
       {tab === "pool" && <Pool />}
       {tab === "vote" && <Vote />}
       {tab === "launch" && <Launch />}
-      {tab === "lend" && <Lend />}
+      {tab === "lend" && <Lend venue="morpho" />}
       {tab === "hooks" && <Hooks />}
       {tab === "flash" && <Flash />}
+      {tab === "aave" && <Lend venue="aave" />}
+      {tab === "docs" && <Docs />}
+    </div>
+  );
+}
+
+/** Doc pages still needed by active quests, tracked quest first. */
+function neededDocs(s: ReturnType<typeof useGame.getState>) {
+  const order = [...quests].sort((a, b) => Number(b.id === s.tracked) - Number(a.id === s.tracked));
+  const out: string[] = [];
+  for (const q of order) {
+    if (s.quests[q.id]?.status !== "active") continue;
+    for (const o of q.objectives) if (o.match?.startsWith("doc:") && !s.quests[q.id].progress[o.id]?.length) out.push(o.match.slice(4));
+  }
+  return out;
+}
+
+const SECTIONS = [...new Set(docs.map((d) => d.section))];
+
+function Docs() {
+  const read = useGame((s) => s.docs);
+  const needed = useGame(useShallow(neededDocs));
+  const [id, setId] = useState(() => needed[0] ?? docs.find((d) => !read.includes(d.id))?.id ?? docs[0].id);
+  const page = docById[id];
+  return (
+    <div className={styles.docs}>
+      <nav>
+        {SECTIONS.map((section) => (
+          <div key={section}>
+            <small>{section}</small>
+            {docs
+              .filter((d) => d.section === section)
+              .map((d) => (
+                <button key={d.id} data-active={d.id === id || undefined} data-needed={needed.includes(d.id) || undefined} onClick={() => setId(d.id)}>
+                  {d.title}
+                  {read.includes(d.id) && <span>✓</span>}
+                </button>
+              ))}
+          </div>
+        ))}
+      </nav>
+      <article key={id}>
+        <h3>{page.title}</h3>
+        <p>{page.summary}</p>
+        <ul>
+          {page.points.map((p) => (
+            <li key={p}>{p}</li>
+          ))}
+        </ul>
+        {page.code && (
+          <pre>
+            <code>{page.code}</code>
+          </pre>
+        )}
+        <a href={page.url} target="_blank" rel="noreferrer">
+          Full page on docs.base.org ↗
+        </a>
+        <QuickCheck id={id} />
+      </article>
+    </div>
+  );
+}
+
+function QuickCheck({ id }: { id: string }) {
+  const readDoc = useGame((s) => s.readDoc);
+  const passed = useGame((s) => s.docs.includes(id));
+  const { q, options, answer } = docById[id].check;
+  const [pick, setPick] = useState<number | null>(null);
+  return (
+    <div className={styles.check} data-state={pick === null ? undefined : pick === answer ? "right" : "wrong"}>
+      <b>Quick check{passed && " ✓"}</b>
+      <span>{q}</span>
+      <div className={styles.options}>
+        {options.map((o, i) => (
+          <button
+            key={o}
+            data-active={pick === i || undefined}
+            onClick={() => {
+              setPick(i);
+              if (i === answer) readDoc(id);
+            }}
+          >
+            <b>{o}</b>
+          </button>
+        ))}
+      </div>
+      {pick !== null && <small>{pick === answer ? "Correct — page mastered." : "Not quite. Skim the page and try again."}</small>}
     </div>
   );
 }
@@ -111,11 +224,11 @@ function Pair({ from, to, setFrom, setTo }: { from: Token; to: Token; setFrom: (
 }
 
 function Swap() {
-  const wallet = useGame((s) => s.wallet);
+  const wallet = useGame((s) => holdings(s).wallet);
   const swap = useGame((s) => s.swap);
   const [from, setFrom] = useState<Token>("ETH");
-  const [to, setTo] = useState<Token>("SKY");
-  const [amount, setAmount] = useState("0.1");
+  const [to, setTo] = useState<Token>("AERO");
+  const [amount, setAmount] = useState(() => (useGame.getState().real ? "0.002" : "0.1"));
   const n = +amount || 0;
   const q = chain.quote(from, to, n);
   const ok = n > 0 && n <= wallet[from] && from !== to;
@@ -139,27 +252,27 @@ function Swap() {
 }
 
 function Pool() {
-  const wallet = useGame((s) => s.wallet);
-  const lp = useGame((s) => s.lp);
+  const wallet = useGame((s) => holdings(s).wallet);
+  const lp = useGame((s) => holdings(s).lp);
   const add = useGame((s) => s.addLiquidity);
-  const [amount, setAmount] = useState("0.05");
+  const [amount, setAmount] = useState(() => (useGame.getState().real ? "0.001" : "0.05"));
   const eth = +amount || 0;
-  const sky = chain.quote("ETH", "SKY", eth).amountOut / 0.997;
-  const ok = eth > 0 && eth <= wallet.ETH && sky <= wallet.SKY;
-  const maxEth = Math.min(wallet.ETH, (wallet.SKY * tokens.SKY.usd) / tokens.ETH.usd);
+  const aero = chain.quote("ETH", "AERO", eth).amountOut / 0.997;
+  const ok = eth > 0 && eth <= wallet.ETH && aero <= wallet.AERO;
+  const maxEth = Math.min(wallet.ETH, (wallet.AERO * tokens.AERO.usd) / tokens.ETH.usd);
   return (
     <div className={styles.body}>
-      <p className={styles.note}>Deposit ETH and SKY in equal value. You earn swap fees and can stake the LP for emissions.</p>
+      <p className={styles.note}>Deposit ETH and AERO in equal value. You earn swap fees and can stake the LP for emissions.</p>
       <Amount value={amount} onChange={setAmount} token="ETH" max={maxEth} />
       <dl className={styles.facts}>
-        <dt>Paired SKY</dt>
+        <dt>Paired AERO</dt>
         <dd>
-          {fmt(sky)} SKY <small>(you have {fmt(wallet.SKY)})</small>
+          {fmt(aero)} AERO <small>(you have {fmt(wallet.AERO)})</small>
         </dd>
         <dt>Your LP</dt>
         <dd>{fmt(lp)}</dd>
       </dl>
-      <Submit label={sky > wallet.SKY ? "Not enough SKY — swap first" : "Add liquidity"} disabled={!ok} onClick={() => add(eth)} />
+      <Submit label={aero > wallet.AERO ? "Not enough AERO — swap first" : "Add liquidity"} disabled={!ok} onClick={() => add(eth)} />
     </div>
   );
 }
@@ -169,12 +282,12 @@ function Vote() {
   const votes = useGame((s) => s.votes);
   const vote = useGame((s) => s.vote);
   const [gauge, setGauge] = useState(GAUGES[0]);
-  const [amount, setAmount] = useState(String(Math.floor(wallet.SKY / 2) || 50));
+  const [amount, setAmount] = useState(String(Math.floor(wallet.AERO / 2) || 50));
   const n = +amount || 0;
   const total = Object.values(votes).reduce((a, b) => a + b, 0);
   return (
     <div className={styles.body}>
-      <p className={styles.note}>Lock SKY into veSKY and vote. Emissions next epoch flow to the gauges with the most votes.</p>
+      <p className={styles.note}>Lock AERO into veAERO and vote. Emissions next epoch flow to the gauges with the most votes.</p>
       <div className={styles.options}>
         {GAUGES.map((g) => (
           <button key={g} data-active={g === gauge || undefined} onClick={() => setGauge(g)}>
@@ -183,14 +296,14 @@ function Vote() {
           </button>
         ))}
       </div>
-      <Amount value={amount} onChange={setAmount} token="SKY" max={wallet.SKY} />
-      <Submit label={n > wallet.SKY ? "Not enough SKY" : `Lock & vote for ${gauge}`} disabled={n <= 0 || n > wallet.SKY} onClick={() => vote(gauge, n)} />
+      <Amount value={amount} onChange={setAmount} token="AERO" max={wallet.AERO} />
+      <Submit label={n > wallet.AERO ? "Not enough AERO" : `Lock & vote for ${gauge}`} disabled={n <= 0 || n > wallet.AERO} onClick={() => vote(gauge, n)} />
     </div>
   );
 }
 
 function Launch() {
-  const virt = useGame((s) => s.wallet.VIRT);
+  const virt = useGame((s) => s.wallet.VIRTUAL);
   const agents = useGame((s) => s.agents);
   const launch = useGame((s) => s.launchAgent);
   const [name, setName] = useState("");
@@ -208,7 +321,7 @@ function Launch() {
       <dl className={styles.facts}>
         <dt>Launch cost</dt>
         <dd>
-          {LAUNCH_COST} VIRT <small>(you have {fmt(virt)})</small>
+          {LAUNCH_COST} VIRTUAL <small>(you have {fmt(virt)})</small>
         </dd>
         {agents.length > 0 && (
           <>
@@ -217,27 +330,29 @@ function Launch() {
           </>
         )}
       </dl>
-      <Submit label={virt < LAUNCH_COST ? "Not enough VIRT" : "Launch agent"} disabled={virt < LAUNCH_COST || !name.trim()} onClick={() => (launch(name, persona), setName(""))} />
+      <Submit label={virt < LAUNCH_COST ? "Not enough VIRTUAL" : "Launch agent"} disabled={virt < LAUNCH_COST || !name.trim()} onClick={() => (launch(name, persona), setName(""))} />
     </div>
   );
 }
 
-function Lend() {
-  const wallet = useGame((s) => s.wallet);
-  const vault = useGame((s) => s.vault);
+function Lend({ venue }: { venue: Venue }) {
+  const wallet = useGame((s) => holdings(s).wallet);
+  const vault = useGame((s) => holdings(s).vaults[venue]);
+  const real = useGame((s) => !!s.real);
   const supply = useGame((s) => s.supply);
   const borrow = useGame((s) => s.borrow);
   const repay = useGame((s) => s.repay);
+  const { lt } = venues[venue];
   const [mode, setMode] = useState<"supply" | "borrow" | "repay">(vault.collateral > 0 ? (vault.debt > 0 ? "repay" : "borrow") : "supply");
-  const [amount, setAmount] = useState(mode === "supply" ? "0.2" : "200");
+  const [amount, setAmount] = useState(mode === "supply" ? (real ? "0.002" : "0.2") : real ? "2" : "200");
   const n = +amount || 0;
-  const maxBorrow = Math.max(0, (vault.collateral * tokens.ETH.usd * LIQUIDATION_LTV) / 1.05 - vault.debt);
-  const projected = healthFactor(vault, mode === "borrow" ? n : mode === "repay" ? -Math.min(n, vault.debt) : 0);
-  const after = mode === "supply" ? healthFactor({ ...vault, collateral: vault.collateral + n }) : projected;
-  const ok = mode === "supply" ? n > 0 && n <= wallet.ETH : mode === "borrow" ? n > 0 && healthFactor(vault, n) >= 1.05 : n > 0 && vault.debt > 0 && wallet.CASH > 0;
+  const maxBorrow = Math.max(0, (vault.collateral * tokens.ETH.usd * lt) / 1.05 - vault.debt);
+  const projected = healthFactor(vault, mode === "borrow" ? n : mode === "repay" ? -Math.min(n, vault.debt) : 0, lt);
+  const after = mode === "supply" ? healthFactor({ ...vault, collateral: vault.collateral + n }, 0, lt) : projected;
+  const ok = mode === "supply" ? n > 0 && n <= wallet.ETH : mode === "borrow" ? n > 0 && healthFactor(vault, n, lt) >= 1.05 : n > 0 && vault.debt > 0 && wallet.USDC > 0;
   const pick = (m: typeof mode) => {
     setMode(m);
-    setAmount(m === "supply" ? "0.2" : m === "borrow" ? String(Math.floor(maxBorrow / 2)) : String(+Math.min(vault.debt, wallet.CASH).toFixed(2)));
+    setAmount(m === "supply" ? (real ? "0.002" : "0.2") : m === "borrow" ? String(+(maxBorrow / 2).toFixed(2)) : String(+Math.min(vault.debt, wallet.USDC).toFixed(2)));
   };
   return (
     <div className={styles.body}>
@@ -245,11 +360,11 @@ function Lend() {
         <dt>Collateral</dt>
         <dd>{fmt(vault.collateral)} ETH</dd>
         <dt>Debt</dt>
-        <dd>{fmt(vault.debt)} CASH</dd>
+        <dd>{fmt(vault.debt)} USDC</dd>
         <dt>Liquidation LTV</dt>
-        <dd>{LIQUIDATION_LTV * 100}%</dd>
+        <dd>{lt * 100}%</dd>
       </dl>
-      <Health value={healthFactor(vault)} next={after} />
+      <Health value={healthFactor(vault, 0, lt)} next={after} />
       <nav className={styles.tabs}>
         {(["supply", "borrow", "repay"] as const).map((m) => (
           <button key={m} data-active={m === mode || undefined} onClick={() => pick(m)}>
@@ -257,11 +372,11 @@ function Lend() {
           </button>
         ))}
       </nav>
-      <Amount value={amount} onChange={setAmount} token={mode === "supply" ? "ETH" : "CASH"} max={mode === "supply" ? wallet.ETH : mode === "borrow" ? maxBorrow : Math.min(vault.debt, wallet.CASH)} />
+      <Amount value={amount} onChange={setAmount} token={mode === "supply" ? "ETH" : "USDC"} max={mode === "supply" ? wallet.ETH : mode === "borrow" ? maxBorrow : Math.min(vault.debt, wallet.USDC)} />
       <Submit
-        label={mode === "supply" ? "Supply ETH" : mode === "borrow" ? (vault.collateral ? "Borrow CASH" : "Supply collateral first") : vault.debt ? "Repay" : "Nothing to repay"}
+        label={mode === "supply" ? "Supply ETH" : mode === "borrow" ? (vault.collateral ? "Borrow USDC" : "Supply collateral first") : vault.debt ? "Repay" : "Nothing to repay"}
         disabled={!ok}
-        onClick={() => (mode === "supply" ? supply(n) : mode === "borrow" ? borrow(n) : repay(n))}
+        onClick={() => (mode === "supply" ? supply(venue, n) : mode === "borrow" ? borrow(venue, n) : repay(venue, n))}
       />
     </div>
   );
@@ -290,7 +405,7 @@ function Hooks() {
   const hookSwap = useGame((s) => s.hookSwap);
   const [hook, setHook] = useState<string>(hooks[0].id);
   const [from, setFrom] = useState<Token>("ETH");
-  const [to, setTo] = useState<Token>("SKY");
+  const [to, setTo] = useState<Token>("AERO");
   const [amount, setAmount] = useState("0.05");
   const n = +amount || 0;
   const ok = n > 0 && n <= wallet[from] && from !== to;
@@ -314,7 +429,7 @@ function Hooks() {
   );
 }
 
-const ROUTE = ["Buy SKY on Aeroport", "Sell SKY for CASH at Hook Bazaar", "Buy ETH with CASH in Vault Quarter"];
+const ROUTE = ["Buy AERO on Aerodrome", "Sell AERO for USDC on Uniswap", "Buy ETH with USDC on Morpho"];
 const BLOCK = 8;
 
 function Flash() {
@@ -351,14 +466,14 @@ function Flash() {
     if (next.length === ROUTE.length) {
       setStart(null);
       setResult("Repaid 1,000 ETH + fee inside the block.");
-      flashLoan(["Aeroport", "Hook Bazaar", "Vault Quarter"]);
+      flashLoan(["Aerodrome", "Uniswap", "Morpho"]);
     }
   };
 
   return (
     <div className={styles.body}>
       <p className={styles.note}>
-        Borrow 1,000 ETH with no collateral, run the route in order — Aeroport → Hook Bazaar → Vault Quarter — and repay before the {BLOCK}s block closes.
+        Borrow 1,000 ETH with no collateral, run the route in order — Aerodrome → Uniswap → Morpho — and repay before the {BLOCK}s block closes.
       </p>
       {start === null ? (
         <>

@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { CuboidCollider, CylinderCollider, RigidBody } from "@react-three/rapier";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { AdditiveBlending, Color, DoubleSide, type Group, type InstancedMesh, type Mesh, Object3D } from "three";
+import { BrandDisc } from "./brand";
 import { type DistrictDef, districtById, districts, palette, RACE, stations, SUMMIT, type Vec3 } from "./config";
 import { windowMaterial } from "./environment";
 import { useGame } from "./store";
@@ -19,8 +20,8 @@ export function Districts() {
     <>
       <Plaza />
       <Summit />
-      <Aeroport />
-      <Virtua />
+      <Aerodrome />
+      <Virtuals />
       {districts
         .filter((d) => d.look)
         .map((d) => (
@@ -30,12 +31,17 @@ export function Districts() {
   );
 }
 
-export function Sign({ position, text, sub, color, size = 4 }: { position: Vec3; text: string; sub?: string; color: string; size?: number }) {
+export function Sign({ position, text, sub, color, size = 4, logo }: { position: Vec3; text: string; sub?: string; color: string; size?: number; logo?: string }) {
   return (
     <Billboard position={position} lockX lockZ>
+      {logo && (
+        <group position={[0, size * 0.85, 0]}>
+          <BrandDisc src={logo} radius={size * 0.55} />
+        </group>
+      )}
       <Text font={FONT} fontSize={size} letterSpacing={-0.02} anchorY="bottom" outlineWidth={size * 0.04} outlineColor="#020616">
         {text}
-        <meshBasicMaterial color={glow(color, 2.2)} toneMapped={false} />
+        <meshBasicMaterial color={glow(color, 1.6)} toneMapped={false} />
       </Text>
       {sub && (
         <Text font={FONT} fontSize={size * 0.3} position={[0, -size * 0.35, 0]} anchorY="top" color="#dce8ff" outlineWidth={size * 0.015} outlineColor="#020616">
@@ -63,12 +69,12 @@ function Floor({ center, radius, color, rings = 3, y = 0.06 }: { center: [number
     <group position={[center[0], y, center[1]]}>
       <mesh rotation-x={-Math.PI / 2} receiveShadow>
         <circleGeometry args={[radius, 64]} />
-        <meshStandardMaterial color="#0c1a45" roughness={0.8} metalness={0.2} />
+        <meshStandardMaterial color="#1c2f74" roughness={0.8} metalness={0.15} />
       </mesh>
       {Array.from({ length: rings }, (_, i) => (
         <mesh key={i} rotation-x={-Math.PI / 2} position-y={0.02}>
           <ringGeometry args={[radius * (0.35 + i * 0.3) - 0.35, radius * (0.35 + i * 0.3), 96]} />
-          <meshBasicMaterial color={glow(color, 1.8)} toneMapped={false} />
+          <meshBasicMaterial color={glow(color, 1.25)} toneMapped={false} />
         </mesh>
       ))}
     </group>
@@ -101,8 +107,8 @@ function Plaza() {
         <sphereGeometry args={[2.4, 32, 32]} />
         <meshBasicMaterial color={glow("#5b8cff", 3)} toneMapped={false} />
       </mesh>
-      <pointLight position={[0, 12, 0]} color={palette.baseBright} intensity={300} distance={60} />
-      <Sparkles count={120} scale={[26, 22, 26]} position={[0, 11, 0]} size={8} speed={0.5} color={palette.cyan} />
+      <pointLight position={[0, 12, 0]} color={palette.baseBright} intensity={140} distance={50} />
+      <Sparkles count={60} scale={[26, 22, 26]} position={[0, 11, 0]} size={7} speed={0.5} color={palette.cyan} />
       {posts.map((a) => (
         <group key={a} position={[Math.cos(a) * 40, 0, Math.sin(a) * 40]}>
           <mesh position={[0, 2.5, 0]} castShadow>
@@ -115,7 +121,7 @@ function Plaza() {
           </mesh>
         </group>
       ))}
-      <Sign position={[0, 21, 0]} text="BASE WORLD" sub="Base Plaza · gm" color={palette.baseBright} size={5} />
+      <Sign position={[0, 21, 0]} text="BASE WORLD" sub="Base Plaza · gm" color={palette.baseBright} size={5} logo="/world/brands/base.png" />
     </group>
   );
 }
@@ -182,7 +188,7 @@ function Plane({ color = "#f4f7ff", accent = palette.aero }: { color?: string; a
 function FlyingPlane() {
   const ref = useRef<Group>(null);
   useFrame(({ clock }) => {
-    const t = clock.elapsedTime * 0.12;
+    const t = clock.elapsedTime * 0.035;
     const g = ref.current;
     if (!g) return;
     g.position.set(240 + Math.cos(t) * 150, 70 + Math.sin(t * 2) * 6, -40 + Math.sin(t) * 110);
@@ -215,7 +221,7 @@ function RunwayLights() {
   }, [lights]);
   const mat = useRef<Mesh>(null);
   useFrame(({ clock }) => {
-    if (mat.current) mat.current.position.x = 135 + ((clock.elapsedTime * 90) % 220);
+    if (mat.current) mat.current.position.x = 135 + ((clock.elapsedTime * 22) % 220);
   });
   return (
     <>
@@ -231,7 +237,7 @@ function RunwayLights() {
   );
 }
 
-function Aeroport() {
+function Aerodrome() {
   const terminal = useMemo(windowMaterial, []);
   const pool = station("station-pool");
   const vote = station("station-vote");
@@ -272,7 +278,7 @@ function Aeroport() {
         <boxGeometry args={[124, 0.4, 0.4]} />
         <meshBasicMaterial color={glow(palette.aero, 3)} toneMapped={false} />
       </mesh>
-      <Sign position={[235, 19, 46]} text="AEROPORT" sub="Flagship liquidity hub · swap · pool · vote" color={palette.aero} size={6} />
+      <Sign position={[235, 19, 46]} text="AERODROME" sub="The liquidity layer of Base · swap · pool · vote" color={palette.aero} size={6} logo="/world/brands/aerodrome.png" />
 
       {/* epoch board */}
       <group position={[300, 7, 34]}>
@@ -297,7 +303,7 @@ function Aeroport() {
           <coneGeometry args={[7, 2.5, 12]} />
           <meshStandardMaterial color="#f2f5ff" />
         </mesh>
-        <Spin speed={2.4} position={[0, 41.4, 0]}>
+        <Spin speed={0.55} position={[0, 41.4, 0]}>
           <mesh position={[0.9, 0, 0]}>
             <boxGeometry args={[1.8, 0.6, 0.6]} />
             <meshBasicMaterial color={glow(palette.aero, 5)} toneMapped={false} />
@@ -371,10 +377,10 @@ function EpochBoard() {
         EPOCH 142
       </Text>
       <Text font={FONT} fontSize={0.8} position={[0, 1.4, 0]} color="#dce8ff">
-        {total > 0 ? `Your votes: ${Math.round(total)} veSKY` : "Lock SKY · vote · earn"}
+        {total > 0 ? `Your votes: ${Math.round(total)} veAERO` : "Lock AERO · vote · earn"}
       </Text>
       <Text font={FONT} fontSize={0.8} position={[0, -0.6, 0]} color={palette.cyan}>
-        {top ? `Leading gauge: ${top[0]}` : "Leading gauge: ETH/SKY"}
+        {top ? `Leading gauge: ${top[0]}` : "Leading gauge: ETH/AERO"}
       </Text>
       <Text font={FONT} fontSize={0.6} position={[0, -3, 0]} color="#8fa6e8">
         Emissions follow the votes
@@ -396,21 +402,21 @@ function RaceGates() {
   );
 }
 
-function Virtua() {
-  const d = districtById.virtua;
+function Virtuals() {
+  const d = districtById.virtuals;
   const towers = useMemo(() => {
     const out: { x: number; z: number; h: number; c: string }[] = [];
     for (let i = 0; i < 11; i++) {
       const a = (i / 11) * Math.PI * 2 + 0.3;
       if (Math.abs(Math.atan2(Math.sin(a - 5.62), Math.cos(a - 5.62))) < 0.35) continue;
-      out.push({ x: d.center[0] + Math.cos(a) * 60, z: d.center[1] + Math.sin(a) * 60, h: 26 + ((i * 37) % 40), c: i % 2 ? palette.virtua : palette.cyan });
+      out.push({ x: d.center[0] + Math.cos(a) * 60, z: d.center[1] + Math.sin(a) * 60, h: 26 + ((i * 37) % 40), c: i % 2 ? palette.virtuals : palette.cyan });
     }
     return out;
   }, [d]);
   const pad = station("station-launch");
   return (
     <group>
-      <Floor center={d.center} radius={72} color={palette.virtua} />
+      <Floor center={d.center} radius={72} color={palette.virtuals} />
       <RigidBody type="fixed" colliders={false}>
         {towers.map((t, i) => (
           <CuboidCollider key={i} args={[4, t.h / 2, 4]} position={[t.x, t.h / 2, t.z]} />
@@ -432,25 +438,25 @@ function Virtua() {
       <Spin speed={0.5} position={[d.center[0], 24, d.center[1]]}>
         <mesh>
           <torusKnotGeometry args={[5, 1.1, 160, 16]} />
-          <meshStandardMaterial color="#1a0b3a" emissive={palette.virtua} emissiveIntensity={2.2} metalness={0.6} roughness={0.2} />
+          <meshStandardMaterial color="#1a0b3a" emissive={palette.virtuals} emissiveIntensity={2.2} metalness={0.6} roughness={0.2} />
         </mesh>
       </Spin>
       <group position={[pad[0], 0, pad[2]]}>
         <mesh rotation-x={-Math.PI / 2} position-y={0.12}>
           <ringGeometry args={[5, 6.2, 64]} />
-          <meshBasicMaterial color={glow(palette.virtua, 3)} toneMapped={false} />
+          <meshBasicMaterial color={glow(palette.virtuals, 3)} toneMapped={false} />
         </mesh>
         <mesh rotation-x={-Math.PI / 2} position-y={0.1}>
           <circleGeometry args={[5, 64]} />
-          <meshStandardMaterial color="#1a0b3a" emissive={palette.virtua} emissiveIntensity={0.5} />
+          <meshStandardMaterial color="#1a0b3a" emissive={palette.virtuals} emissiveIntensity={0.5} />
         </mesh>
         <mesh position-y={30}>
           <cylinderGeometry args={[4.6, 5.6, 60, 32, 1, true]} />
-          <meshBasicMaterial color={glow(palette.virtua, 0.8)} transparent opacity={0.18} blending={AdditiveBlending} depthWrite={false} side={DoubleSide} />
+          <meshBasicMaterial color={glow(palette.virtuals, 0.8)} transparent opacity={0.18} blending={AdditiveBlending} depthWrite={false} side={DoubleSide} />
         </mesh>
       </group>
-      <Sparkles count={160} scale={[120, 30, 120]} position={[d.center[0], 14, d.center[1]]} size={7} speed={0.4} color={palette.virtua} />
-      <Sign position={[d.center[0] + 10, 34, d.center[1] - 10]} text="VIRTUA" sub="AI agents live here" color={palette.virtua} size={6} />
+      <Sparkles count={70} scale={[120, 30, 120]} position={[d.center[0], 14, d.center[1]]} size={6} speed={0.4} color={palette.virtuals} />
+      <Sign position={[d.center[0] + 10, 34, d.center[1] - 10]} text="VIRTUALS" sub="The agent economy" color={palette.virtuals} size={6} logo="/world/brands/virtuals.png" />
     </group>
   );
 }
@@ -514,12 +520,16 @@ export function ProtocolDistrict({ d }: { d: DistrictDef }) {
           <torusGeometry args={[4.4, 0.35, 16, 64]} />
           <meshBasicMaterial color={glow(d.color, 2)} toneMapped={false} />
         </mesh>
-        <mesh>
-          <icosahedronGeometry args={[2.4, 0]} />
-          <meshStandardMaterial color="#0b1640" emissive={look.accent} emissiveIntensity={1.4} flatShading />
-        </mesh>
+        {d.logo ? (
+          <BrandDisc src={d.logo} radius={2.6} />
+        ) : (
+          <mesh>
+            <icosahedronGeometry args={[2.4, 0]} />
+            <meshStandardMaterial color="#0b1640" emissive={look.accent} emissiveIntensity={1.4} flatShading />
+          </mesh>
+        )}
       </Spin>
-      <Sparkles count={70} scale={[d.radius * 1.6, 22, d.radius * 1.6]} position={[cx, 10, cz]} size={6} speed={0.35} color={look.accent} />
+      <Sparkles count={35} scale={[d.radius * 1.6, 22, d.radius * 1.6]} position={[cx, 10, cz]} size={6} speed={0.35} color={look.accent} />
       <Sign position={[cx, 31, cz]} text={look.sign} sub={look.tagline} color={look.accent} size={4} />
     </group>
   );

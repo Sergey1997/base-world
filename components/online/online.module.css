@@ -1,0 +1,186 @@
+.screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(ellipse at 50% 30%, rgba(0, 82, 255, 0.35), #050b24 70%);
+  color: #dce8ff;
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.card {
+  position: relative;
+  width: min(460px, 100%);
+  padding: 40px 32px 32px;
+  border: 1px solid rgba(94, 231, 255, 0.18);
+  border-radius: 18px;
+  background: rgba(7, 14, 44, 0.78);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.card h1 {
+  margin: 0 0 12px;
+  font: 700 1.6rem/1.15 "Unbounded", system-ui, sans-serif;
+  color: #fff;
+}
+
+.card p {
+  margin: 0 0 24px;
+  color: #a9bce8;
+}
+
+.back {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  color: #7f95c9;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.back:hover {
+  color: #dce8ff;
+}
+
+.primary {
+  min-width: 180px;
+  padding: 12px 22px;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #3d7bff, #0052ff);
+  box-shadow: 0 0 22px rgba(0, 82, 255, 0.5);
+  color: #fff;
+  font: 700 0.95rem/1 "Unbounded", system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* in-game wallet bar, bottom-left above the controls hint */
+.bar {
+  position: absolute;
+  left: 16px;
+  bottom: 40px;
+  z-index: 25;
+  display: grid;
+  gap: 8px;
+  width: 300px;
+  padding: 12px 14px;
+  border: 1px solid rgba(94, 231, 255, 0.18);
+  border-radius: 14px;
+  background: rgba(7, 14, 44, 0.78);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.row b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.chip {
+  padding: 2px 8px;
+  border: 1px solid rgba(220, 232, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(220, 232, 255, 0.06);
+  font: 600 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+}
+
+.net {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #0052ff;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.muted {
+  color: #8ea3d6;
+}
+
+.hint {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 209, 102, 0.12);
+  color: #ffd166;
+}
+
+.action {
+  flex: 1;
+  padding: 7px 0;
+  border: 1px solid rgba(220, 232, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(220, 232, 255, 0.08);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.action:first-child {
+  border-color: transparent;
+  background: linear-gradient(180deg, #3d7bff, #0052ff);
+  color: #fff;
+}
+
+.action[data-active] {
+  border-color: #5ee7ff;
+}
+
+.send {
+  display: grid;
+  gap: 8px;
+}
+
+.send input,
+.send select {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(220, 232, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(2, 6, 22, 0.6);
+}
+
+.send .row input {
+  flex: 1;
+}
+
+.send .primary {
+  min-width: 0;
+  padding: 10px;
+  font-size: 0.8rem;
+}
+
+.last {
+  overflow: hidden;
+  color: #5ee7ff;
+  font-size: 12px;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -5,6 +5,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { CapsuleCollider, type RapierRigidBody, RigidBody, useRapier } from "@react-three/rapier";
 import { useEffect, useMemo, useRef } from "react";
 import { AdditiveBlending, BufferAttribute, BufferGeometry, type Group, type MeshStandardMaterial, type PerspectiveCamera, MathUtils, Vector3 } from "three";
+import { sound } from "./audio";
 import { jumpPads, palette, SPAWN } from "./config";
 import { consume, keys, pressed } from "./input";
 import { live, uiLocked, useGame } from "./store";
@@ -30,7 +31,7 @@ export function Player() {
   const { rapier, world } = useRapier();
   const { camera, gl } = useThree();
   const cam = useRef({ yaw: 0, pitch: 0.3, dist: 10, target: new Vector3(...SPAWN), lastMouse: -1e9 });
-  const st = useRef({ dash: 0, cooldown: 0, jumps: 0, pad: 0, mach: false, dir: new Vector3(0, 0, -1) });
+  const st = useRef({ dash: 0, cooldown: 0, jumps: 0, pad: 0, mach: false, dir: new Vector3(0, 0, -1), air: 0, fall: 0, stride: 0 });
 
   useEffect(() => {
     const el = gl.domElement;
@@ -78,7 +79,15 @@ export function Player() {
     const v = b.linvel();
     const hit = world.castRay(new rapier.Ray(t, { x: 0, y: -1, z: 0 }), 1.3, true, undefined, undefined, undefined, b);
     const grounded = !!hit && hit.timeOfImpact < 1.12 && v.y <= 1;
-    if (grounded) s.jumps = 0;
+    if (grounded) {
+      if (s.air > 0.18) sound.land(-s.fall);
+      s.jumps = 0;
+      s.air = 0;
+      s.fall = 0;
+    } else {
+      s.air += dt;
+      s.fall = Math.min(s.fall, v.y);
+    }
 
     const on = (...codes: string[]) => !locked && codes.some((k) => keys.has(k));
     if (on("ArrowLeft")) c.yaw += 2.4 * dt;
@@ -98,6 +107,7 @@ export function Player() {
       s.dash = DASH_TIME;
       s.cooldown = DASH_COOLDOWN;
       s.dir.copy(moving ? wish : tmp.set(Math.sin(live.heading), 0, Math.cos(live.heading)));
+      sound.dash();
     }
     if (s.dash > 0) {
       s.dash -= dt;
@@ -115,9 +125,11 @@ export function Player() {
       if (grounded) {
         vy = JUMP;
         s.jumps = 1;
+        sound.jump();
       } else if (s.jumps < 2) {
         vy = JUMP * 0.92;
         s.jumps = 2;
+        sound.doubleJump();
       }
     }
 
@@ -127,6 +139,7 @@ export function Player() {
       [vx, vy, vz] = p.launch;
       s.pad = 0.8;
       s.jumps = 1;
+      sound.pad();
     }
 
     if (t.y < -25) {
@@ -142,6 +155,7 @@ export function Player() {
     live.dashCharge = 1 - Math.max(0, s.cooldown) / DASH_COOLDOWN;
     if (!s.mach && hspeed * 3.6 >= 150) {
       s.mach = true;
+      sound.mach();
       useGame.getState().emit({ type: "action", action: "mach" });
     }
     if (hspeed * 3.6 < 100) s.mach = false;
@@ -156,6 +170,10 @@ export function Player() {
     const bs = MathUtils.lerp(board.current.scale.x, riding ? 1 : 0.001, 1 - Math.exp(-14 * dt));
     board.current.scale.setScalar(bs);
     const stride = grounded && !riding ? Math.sin(state.clock.elapsedTime * (6 + hspeed * 0.6)) * Math.min(1, hspeed / 6) * 0.7 : riding ? 0.25 : 0.4;
+    const foot = Math.sign(stride);
+    if (grounded && !riding && hspeed > 2 && foot !== s.stride) sound.step();
+    s.stride = foot;
+    sound.motion(hspeed, riding, !grounded);
     if (legL.current && legR.current) {
       legL.current.rotation.x = stride;
       legR.current.rotation.x = riding ? -0.25 : -stride;
@@ -258,7 +276,6 @@ function Hoverboard() {
         <planeGeometry args={[0.55, 1.6]} />
         <meshBasicMaterial color={[0.4, 1.8, 2.6]} toneMapped={false} />
       </mesh>
-      <pointLight position={[0, -0.4, 0]} color={palette.cyan} intensity={8} distance={6} />
     </group>
   );
 }

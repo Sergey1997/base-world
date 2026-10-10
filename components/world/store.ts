@@ -1,9 +1,10 @@
 import { Vector3 } from "three";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, type PersistStorage } from "zustand/middleware";
 import { agentReply, parseBankerIntent, personas } from "./agents";
-import { fmt, LIQUIDATION_LTV, mockChain, type Token, tokens, type TxReceipt } from "./chain";
+import { type ChainAdapter, fmt, type Holdings, LIQUIDATION_LTV, mockChain, type Position, type Token, tokens, type TxReceipt, type Venue, venues } from "./chain";
 import { type DistrictId, districtById, npcs, orbs, type PanelId, RACE, SPAWN, stations, type Vec3 } from "./config";
+import { docById } from "./docs";
 import { levelFor, matches, type QuestEvent, questById, quests } from "./quests";
 
 /** Per-frame values written by the scene and read by the HUD without re-rendering. */
@@ -16,7 +17,40 @@ export const live = {
   dashCharge: 1,
 };
 
-export const chain = mockChain;
+/** Swapped for a real adapter by `boot` in online mode; ES live binding keeps every importer in sync. */
+export let chain: ChainAdapter = mockChain;
+
+/** Where online saves live. Offline mode keeps using localStorage. */
+export interface Cloud {
+  load(): Promise<string | null>;
+  save(raw: string): void;
+  logTx(tx: TxReceipt, kind: string): void;
+}
+let cloud: Cloud | null = null;
+
+/** Picks the save backend and chain, then loads the save. Nothing is written until this resolves. */
+export async function boot(options: { chain?: ChainAdapter; cloud?: Cloud } = {}) {
+  chain = options.chain ?? mockChain;
+  cloud = options.cloud ?? null;
+  await useGame.persist.rehydrate();
+  await useGame.getState().sync();
+}
+
+const saves: PersistStorage<Persisted> = {
+  getItem: async (name) => {
+    const raw = cloud ? await cloud.load() : localStorage.getItem(name);
+    return raw ? JSON.parse(raw) : null;
+  },
+  setItem: (name, value) => {
+    if (!useGame.persist.hasHydrated()) return;
+    const raw = JSON.stringify(value);
+    if (cloud) cloud.save(raw);
+    else localStorage.setItem(name, raw);
+  },
+  removeItem: (name) => {
+    if (!cloud) localStorage.removeItem(name);
+  },
+};
 
 type QuestStatus = "locked" | "available" | "active" | "done";
 interface QuestState {
@@ -47,16 +81,17 @@ interface Persisted {
   xp: number;
   wallet: Record<Token, number>;
   lp: number;
-  veSky: number;
+  veAero: number;
   votes: Record<string, number>;
   quests: Record<string, QuestState>;
   tracked: string | null;
   badges: string[];
   agents: LaunchedAgent[];
   deployed: { name: string; ticker: string }[];
-  vault: { collateral: number; debt: number };
+  vaults: Record<Venue, Position>;
   txs: TxReceipt[];
   bestRace: number | null;
+  docs: string[];
 }
 
 interface GameState extends Persisted {
@@ -65,13 +100,17 @@ interface GameState extends Persisted {
   dialog: string | null;
   panel: PanelId | null;
   logOpen: boolean;
+  mapOpen: boolean;
   district: DistrictId | null;
   toasts: Toast[];
   race: { running: boolean; next: number; start: number };
   pending: boolean;
   chats: Record<string, ChatMessage[]>;
+  /** The connected wallet's real holdings (online mode); when set, DeFi panels act on these instead of game balances. */
+  real: Holdings | null;
 
   start(): void;
+  sync(): Promise<void>;
   emit(e: QuestEvent): void;
   accept(id: string): void;
   track(id: string): void;
@@ -80,6 +119,9 @@ interface GameState extends Persisted {
   interact(): void;
   close(): void;
   toggleLog(): void;
+  toggleMap(): void;
+  toggleDocs(): void;
+  readDoc(id: string): void;
   setNearby(id: string | null): void;
   setDistrict(id: DistrictId | null): void;
   passRing(index: number): void;
@@ -89,9 +131,10 @@ interface GameState extends Persisted {
   vote(gauge: string, amount: number): Promise<void>;
   launchAgent(name: string, persona: string): Promise<void>;
   hookSwap(hook: string, from: Token, to: Token, amount: number): Promise<void>;
-  supply(eth: number): Promise<void>;
-  borrow(cash: number): Promise<void>;
-  repay(cash: number): Promise<void>;
+  supply(venue: Venue, eth: number): Promise<void>;
+  borrow(venue: Venue, cash: number): Promise<void>;
+  repay(venue: Venue, cash: number): Promise<void>;
+  send(to: string, token: Token, amount: number): Promise<boolean>;
   flashLoan(route: string[]): Promise<void>;
   chat(agentId: string, text: string): void;
   reset(): void;
@@ -105,27 +148,46 @@ function initialQuests(): Record<string, QuestState> {
   );
 }
 
+/** Fills in quests added after a save was written, unlocking any whose requirements are already done. */
+function hydrateQuests(saved?: Record<string, QuestState>): Record<string, QuestState> {
+  const next = { ...initialQuests(), ...saved };
+  for (const q of quests) {
+    if (saved?.[q.id]) continue;
+    const ready = q.requires.every((r) => next[r]?.status === "done");
+    next[q.id] = { status: !q.requires.length || ready ? (q.auto ? "active" : "available") : "locked", progress: {} };
+  }
+  return next;
+}
+
 const initial: Persisted = {
   xp: 0,
-  wallet: { ETH: 0.5, SKY: 0, VIRT: 0, CASH: 0 },
+  wallet: { ETH: 0.5, AERO: 0, VIRTUAL: 0, USDC: 0 },
   lp: 0,
-  veSky: 0,
+  veAero: 0,
   votes: {},
   quests: initialQuests(),
   tracked: null,
   badges: [],
   agents: [],
   deployed: [],
-  vault: { collateral: 0, debt: 0 },
+  vaults: { morpho: { collateral: 0, debt: 0 }, aave: { collateral: 0, debt: 0 } },
   txs: [],
   bestRace: null,
+  docs: [],
 };
 
-export const VAULT_NAME = "Curated ETH Vault";
-
-export function healthFactor(v: { collateral: number; debt: number }, extraDebt = 0) {
+export function healthFactor(v: Position, extraDebt = 0, lt = LIQUIDATION_LTV) {
   const debt = v.debt + extraDebt;
-  return debt <= 0 ? Infinity : (v.collateral * tokens.ETH.usd * LIQUIDATION_LTV) / debt;
+  return debt <= 0 ? Infinity : (v.collateral * tokens.ETH.usd * lt) / debt;
+}
+
+/** Balances the DeFi panels spend: the real wallet online, game balances offline. */
+export const holdings = (s: GameState): Holdings => s.real ?? s;
+
+function errorText(e: unknown) {
+  const err = e as { shortMessage?: string; message?: string };
+  const text = err?.shortMessage ?? err?.message ?? "Something went wrong";
+  return text.length > 160 ? `${text.slice(0, 157)}…` : text;
 }
 
 let toastId = 0;
@@ -145,7 +207,7 @@ export const useGame = create<GameState>()(
       const unlock = () => {
         const qs = { ...get().quests };
         for (const q of quests) {
-          if (qs[q.id].status !== "locked" || !q.requires.every((r) => qs[r].status === "done")) continue;
+          if (!qs[q.id] || qs[q.id].status !== "locked" || !q.requires.every((r) => qs[r]?.status === "done")) continue;
           qs[q.id] = { ...qs[q.id], status: q.auto ? "active" : "available" };
           const giver = npcs.find((n) => n.id === q.giver)?.name;
           get().toast(
@@ -162,31 +224,55 @@ export const useGame = create<GameState>()(
         const q = questById[id];
         set({ quests: { ...get().quests, [id]: { ...get().quests[id], status: "done" } } });
         get().toast({ tone: "reward", title: `Quest complete: ${q.title}`, body: rewardText(q.reward) });
-        award(q.reward.xp, q.reward.tokens);
+        award(q.reward.xp);
         if (q.reward.badge) set({ badges: [...get().badges, q.reward.badge] });
         if (get().tracked === id) {
-          const next = quests.find((x) => get().quests[x.id].status === "active");
+          const next = quests.find((x) => get().quests[x.id]?.status === "active");
           set({ tracked: next?.id ?? null });
         }
         unlock();
       };
 
-      const transact = async <T extends TxReceipt>(send: () => Promise<T>, title: string) => {
+      const funds = () => holdings(get()).wallet;
+
+      /** Simulated settlement for a lending action: wallet deltas plus position deltas. */
+      const move = (venue: Venue, delta: Partial<Record<Token, number>>, pos: Partial<Position>) => {
+        const wallet = { ...get().wallet };
+        for (const [k, v] of Object.entries(delta)) wallet[k as Token] += v ?? 0;
+        const p = get().vaults[venue];
+        const next = { collateral: p.collateral + (pos.collateral ?? 0), debt: Math.max(0, p.debt + (pos.debt ?? 0)) };
+        set({ wallet, vaults: { ...get().vaults, [venue]: next } });
+      };
+
+      /** Runs one transaction. Real ones are logged to the cloud and refresh holdings; failures toast instead of throwing. */
+      const transact = async <T extends TxReceipt>(kind: string, send: () => Promise<T>, title: string): Promise<T | null> => {
         set({ pending: true });
-        const r = await send();
-        set({ pending: false, txs: [r, ...get().txs].slice(0, 20) });
-        get().toast({ tone: "info", title, body: r.summary });
-        return r;
+        try {
+          const r = await send();
+          set({ txs: [r, ...get().txs].slice(0, 20) });
+          get().toast({ tone: "info", title, body: r.summary });
+          if (r.explorer) {
+            cloud?.logTx(r, kind);
+            await get().sync();
+          }
+          return r;
+        } catch (e) {
+          get().toast({ tone: "fail", title: "Transaction not sent", body: errorText(e) });
+          return null;
+        } finally {
+          set({ pending: false });
+        }
       };
 
       const bankerTurn = async (text: string): Promise<string> => {
         const intent = parseBankerIntent(text);
-        const { wallet } = get();
+        const wallet = funds();
         if (intent.kind === "portfolio") {
           get().emit({ type: "action", action: "chat-portfolio" });
           const usd = (Object.keys(wallet) as Token[]).reduce((sum, k) => sum + wallet[k] * tokens[k].usd, 0);
           const deployed = get().deployed.map((d) => `$${d.ticker}`).join(", ");
-          return `You hold ${fmt(wallet.ETH)} ETH, ${fmt(wallet.SKY)} SKY and ${fmt(wallet.VIRT)} VIRT — about $${fmt(usd)}.${get().lp ? ` Plus ${fmt(get().lp)} LP.` : ""}${deployed ? ` Tokens you deployed: ${deployed}.` : ""}`;
+          const lp = holdings(get()).lp;
+          return `You hold ${fmt(wallet.ETH)} ETH, ${fmt(wallet.AERO)} AERO, ${fmt(wallet.VIRTUAL)} VIRTUAL and ${fmt(wallet.USDC)} USDC — about $${fmt(usd)}.${lp ? ` Plus ${fmt(lp)} LP.` : ""}${deployed ? ` Tokens you deployed: ${deployed}.` : ""}`;
         }
         if (intent.kind === "launch") {
           if (get().pending) return "One sec, still settling your last transaction.";
@@ -208,11 +294,11 @@ export const useGame = create<GameState>()(
           const before = get().txs[0];
           await get().swap(intent.from, intent.to, amountIn);
           const tx = get().txs[0];
-          if (tx === before) return "Couldn't route that one — try again in a moment.";
+          if (tx === before) return "That one didn't go through — check the notification and try again.";
           get().emit({ type: "action", action: "chat-trade" });
           return `Filled. ${tx.summary}. tx ${short(tx.hash)}`;
         }
-        return "I can buy, swap, launch tokens and check your portfolio. Try: \"buy 0.05 ETH of SKY\" or \"launch a token called BASED\".";
+        return "I can buy, swap, launch tokens and check your portfolio. Try: \"buy 0.05 ETH of AERO\" or \"launch a token called BASED\".";
       };
 
       return {
@@ -222,18 +308,33 @@ export const useGame = create<GameState>()(
         dialog: null,
         panel: null,
         logOpen: false,
+        mapOpen: false,
         district: null,
         toasts: [],
         race: { running: false, next: 0, start: 0 },
         pending: false,
         chats: {},
+        real: null,
 
-        start: () => set({ started: true }),
+        start: () => {
+          set({ started: true, quests: hydrateQuests(get().quests) });
+          unlock();
+        },
+        sync: async () => {
+          if (!chain.holdings) return void set({ real: null });
+          try {
+            set({ real: await chain.holdings() });
+          } catch (e) {
+            console.warn("Could not read wallet holdings", e);
+            get().toast({ tone: "fail", title: "Couldn't read your wallet", body: "Base RPC didn't answer. Balances will refresh after your next action." });
+            if (!get().real) set({ real: { wallet: { ETH: 0, AERO: 0, VIRTUAL: 0, USDC: 0 }, lp: 0, vaults: structuredClone(initial.vaults) } });
+          }
+        },
 
         emit: (e) => {
           for (const q of quests) {
             const qs = get().quests[q.id];
-            if (qs.status !== "active") continue;
+            if (!qs || qs.status !== "active") continue;
             let changed = false;
             const progress = { ...qs.progress };
             for (const o of q.objectives) {
@@ -258,6 +359,7 @@ export const useGame = create<GameState>()(
             get().toast({ tone: "reward", title: "Airdrop received", body: rewardText({ xp: 0, tokens: q.grant }) });
           }
           if (id === "summit" && get().district === "summit") get().emit({ type: "reach", zone: "summit" });
+          for (const doc of get().docs) get().emit({ type: "action", action: `doc:${doc}` });
         },
 
         track: (id) => set({ tracked: id }),
@@ -279,8 +381,18 @@ export const useGame = create<GameState>()(
           set({ dialog: id });
           get().emit({ type: "talk", npc: id, tags: npc.tags });
         },
-        close: () => set({ dialog: null, panel: null, logOpen: false }),
-        toggleLog: () => set({ logOpen: !get().logOpen, dialog: null, panel: null }),
+        close: () => set({ dialog: null, panel: null, logOpen: false, mapOpen: false }),
+        toggleLog: () => set({ logOpen: !get().logOpen, dialog: null, panel: null, mapOpen: false }),
+        toggleMap: () => set({ mapOpen: !get().mapOpen, dialog: null, panel: null, logOpen: false }),
+        toggleDocs: () => set({ panel: get().panel === "docs" ? null : "docs", dialog: null, logOpen: false, mapOpen: false }),
+        readDoc: (id) => {
+          if (!get().docs.includes(id)) {
+            set({ docs: [...get().docs, id] });
+            get().toast({ tone: "reward", title: "Doc mastered", body: `${docById[id]?.title ?? id} · +25 XP` });
+            award(25);
+          }
+          get().emit({ type: "action", action: `doc:${id}` });
+        },
         setNearby: (id) => get().nearby !== id && set({ nearby: id }),
         setDistrict: (id) => {
           if (get().district === id) return;
@@ -314,37 +426,31 @@ export const useGame = create<GameState>()(
         },
 
         swap: async (from, to, amount) => {
-          if (get().pending || amount <= 0 || amount > get().wallet[from]) return;
-          set({ pending: true });
-          const r = await chain.swap(from, to, amount);
-          const wallet = { ...get().wallet, [from]: get().wallet[from] - amount };
-          wallet[to] += r.amountOut;
-          set({ wallet, pending: false, txs: [r, ...get().txs].slice(0, 20) });
-          get().toast({ tone: "info", title: "Swap confirmed", body: r.summary });
+          if (get().pending || amount <= 0 || amount > funds()[from]) return;
+          const r = await transact("swap", () => chain.swap(from, to, amount), "Swap confirmed");
+          if (!r) return;
+          if (!get().real) {
+            const wallet = { ...get().wallet, [from]: get().wallet[from] - amount };
+            wallet[to] += r.amountOut;
+            set({ wallet });
+          }
           get().emit({ type: "action", action: "swap" });
         },
         addLiquidity: async (eth) => {
-          const { wallet, pending } = get();
-          const sky = chain.quote("ETH", "SKY", eth).amountOut / 0.997;
-          if (pending || eth <= 0 || eth > wallet.ETH || sky > wallet.SKY) return;
-          set({ pending: true });
-          const r = await chain.addLiquidity(eth, sky);
-          set({
-            wallet: { ...get().wallet, ETH: get().wallet.ETH - eth, SKY: get().wallet.SKY - sky },
-            lp: get().lp + r.lp,
-            pending: false,
-            txs: [r, ...get().txs].slice(0, 20),
-          });
-          get().toast({ tone: "info", title: "Liquidity added", body: r.summary });
+          const aero = chain.quote("ETH", "AERO", eth).amountOut / 0.997;
+          if (get().pending || eth <= 0 || eth > funds().ETH || aero > funds().AERO) return;
+          const r = await transact("liquidity", () => chain.addLiquidity(eth, aero), "Liquidity added");
+          if (!r) return;
+          if (!get().real) set({ wallet: { ...get().wallet, ETH: get().wallet.ETH - eth, AERO: get().wallet.AERO - aero }, lp: get().lp + r.lp });
           get().emit({ type: "action", action: "liquidity" });
         },
         vote: async (gauge, amount) => {
-          if (get().pending || amount <= 0 || amount > get().wallet.SKY) return;
+          if (get().pending || amount <= 0 || amount > get().wallet.AERO) return;
           set({ pending: true });
           const r = await chain.vote(gauge, amount);
           set({
-            wallet: { ...get().wallet, SKY: get().wallet.SKY - amount },
-            veSky: get().veSky + amount,
+            wallet: { ...get().wallet, AERO: get().wallet.AERO - amount },
+            veAero: get().veAero + amount,
             votes: { ...get().votes, [gauge]: (get().votes[gauge] ?? 0) + amount },
             pending: false,
             txs: [r, ...get().txs].slice(0, 20),
@@ -353,12 +459,12 @@ export const useGame = create<GameState>()(
           get().emit({ type: "action", action: "vote" });
         },
         launchAgent: async (name, persona) => {
-          if (get().pending || get().wallet.VIRT < LAUNCH_COST || !name.trim()) return;
+          if (get().pending || get().wallet.VIRTUAL < LAUNCH_COST || !name.trim()) return;
           set({ pending: true });
           const r = await chain.launchAgent(name.trim(), persona);
           const color = personas.find((p) => p.id === persona)?.color ?? "#ffffff";
           set({
-            wallet: { ...get().wallet, VIRT: get().wallet.VIRT - LAUNCH_COST },
+            wallet: { ...get().wallet, VIRTUAL: get().wallet.VIRTUAL - LAUNCH_COST },
             agents: [...get().agents, { name: name.trim(), ticker: r.ticker, persona, color }],
             pending: false,
             txs: [r, ...get().txs].slice(0, 20),
@@ -370,35 +476,47 @@ export const useGame = create<GameState>()(
 
         hookSwap: async (hook, from, to, amount) => {
           if (get().pending || amount <= 0 || amount > get().wallet[from] || from === to) return;
-          const r = await transact(() => chain.swapWithHook(hook, from, to, amount), "Hooked swap filled");
+          const r = await transact("hook", () => chain.swapWithHook(hook, from, to, amount), "Hooked swap filled");
+          if (!r) return;
           const wallet = { ...get().wallet, [from]: get().wallet[from] - amount };
           wallet[to] += r.amountOut;
-          if (hook === "rebate") wallet.SKY += (amount * tokens[from].usd * 0.0015) / 2 / tokens.SKY.usd;
+          if (hook === "rebate") wallet.AERO += (amount * tokens[from].usd * 0.0015) / 2 / tokens.AERO.usd;
           set({ wallet });
           get().emit({ type: "action", action: `hook:${hook}` });
         },
-        supply: async (eth) => {
-          if (get().pending || eth <= 0 || eth > get().wallet.ETH) return;
-          await transact(() => chain.supply(VAULT_NAME, eth), "Supplied to vault");
-          set({ wallet: { ...get().wallet, ETH: get().wallet.ETH - eth }, vault: { ...get().vault, collateral: get().vault.collateral + eth } });
-          get().emit({ type: "action", action: "supply" });
+        supply: async (venue, eth) => {
+          if (get().pending || eth <= 0 || eth > funds().ETH) return;
+          const r = await transact("supply", () => chain.supply(venue, eth), "Collateral supplied");
+          if (!r) return;
+          if (!get().real) move(venue, { ETH: -eth }, { collateral: eth });
+          get().emit({ type: "action", action: venueAction(venue, "supply") });
         },
-        borrow: async (cash) => {
-          if (get().pending || cash <= 0 || healthFactor(get().vault, cash) < 1.05) return;
-          await transact(() => chain.borrow(VAULT_NAME, cash), "Loan opened");
-          set({ wallet: { ...get().wallet, CASH: get().wallet.CASH + cash }, vault: { ...get().vault, debt: get().vault.debt + cash } });
-          get().emit({ type: "action", action: "borrow" });
+        borrow: async (venue, cash) => {
+          if (get().pending || cash <= 0 || healthFactor(holdings(get()).vaults[venue], cash, venues[venue].lt) < 1.05) return;
+          const r = await transact("borrow", () => chain.borrow(venue, cash), "Loan opened");
+          if (!r) return;
+          if (!get().real) move(venue, { USDC: cash }, { debt: cash });
+          get().emit({ type: "action", action: venueAction(venue, "borrow") });
         },
-        repay: async (cash) => {
-          const amount = Math.min(cash, get().vault.debt, get().wallet.CASH);
+        repay: async (venue, cash) => {
+          const amount = Math.min(cash, holdings(get()).vaults[venue].debt, funds().USDC);
           if (get().pending || amount <= 0) return;
-          await transact(() => chain.repay(VAULT_NAME, amount), "Loan repaid");
-          set({ wallet: { ...get().wallet, CASH: get().wallet.CASH - amount }, vault: { ...get().vault, debt: get().vault.debt - amount } });
-          get().emit({ type: "action", action: "repay" });
+          const r = await transact("repay", () => chain.repay(venue, amount), "Loan repaid");
+          if (!r) return;
+          if (!get().real) move(venue, { USDC: -amount }, { debt: -amount });
+          get().emit({ type: "action", action: venueAction(venue, "repay") });
+        },
+        send: async (to, token, amount) => {
+          const send = chain.send;
+          if (!send || get().pending || amount <= 0 || amount > funds()[token]) return false;
+          const r = await transact("send", () => send(to, token, amount), "Transfer sent");
+          if (r) get().emit({ type: "action", action: "send" });
+          return !!r;
         },
         flashLoan: async (route) => {
           if (get().pending) return;
-          const r = await transact(() => chain.flashLoan(1000, route), "Flash loan settled");
+          const r = await transact("flash", () => chain.flashLoan(1000, route), "Flash loan settled");
+          if (!r) return;
           set({ wallet: { ...get().wallet, ETH: get().wallet.ETH + r.profit } });
           get().emit({ type: "action", action: "flash" });
         },
@@ -407,39 +525,66 @@ export const useGame = create<GameState>()(
           const npc = npcs.find((n) => n.id === agentId);
           const push = (m: ChatMessage) => set({ chats: { ...get().chats, [agentId]: [...(get().chats[agentId] ?? []), m] } });
           push({ from: "me", text });
+          if (npc?.persona === "gekko" && /yield|apy|vault|morpho|strategy|scan|brief|greed|gekko|portfolio/i.test(text)) {
+            get().emit({ type: "action", action: "chat-yield" });
+          }
           if (npc?.persona === "banker") return void bankerTurn(text).then((reply) => push({ from: "agent", text: reply }));
           setTimeout(() => push({ from: "agent", text: agentReply(npc?.persona ?? "concierge", text) }), 550);
         },
 
         reset: () => {
-          set({ ...initial, quests: initialQuests(), chats: {}, race: { running: false, next: 0, start: 0 }, logOpen: false });
+          set({ ...initial, quests: initialQuests(), chats: {}, race: { running: false, next: 0, start: 0 }, logOpen: false, mapOpen: false });
           live.pos.set(...SPAWN);
         },
       };
     },
     {
       name: "base-world-save",
-      version: 1,
+      version: 5,
+      storage: saves,
+      skipHydration: true,
+      migrate: (state) => {
+        if (!state || typeof state !== "object") return initial;
+        const s = state as Persisted & { vault?: Position };
+        return { ...initial, ...s, ...normalize(s) };
+      },
+      merge: (persisted, current) => {
+        const s = (persisted && typeof persisted === "object" ? persisted : {}) as Partial<Persisted> & { vault?: Position };
+        return { ...current, ...s, ...normalize(s) };
+      },
       partialize: (s): Persisted => ({
         xp: s.xp,
         wallet: s.wallet,
         lp: s.lp,
-        veSky: s.veSky,
+        veAero: s.veAero,
         votes: s.votes,
         quests: s.quests,
         tracked: s.tracked,
         badges: s.badges,
         agents: s.agents,
         deployed: s.deployed,
-        vault: s.vault,
+        vaults: s.vaults,
         txs: s.txs,
         bestRace: s.bestRace,
+        docs: s.docs,
       }),
     },
   ),
 );
 
-export const uiLocked = (s: GameState) => !s.started || !!s.dialog || !!s.panel || s.logOpen;
+/** Fills fields added after a save was written; v4 saves kept a single Morpho `vault`. */
+function normalize(s: Partial<Persisted> & { vault?: Position }) {
+  return {
+    wallet: { ...initial.wallet, ...s.wallet },
+    vaults: { ...initial.vaults, ...(s.vault && { morpho: s.vault }), ...s.vaults },
+    quests: hydrateQuests(s.quests),
+    docs: s.docs ?? [],
+  };
+}
+
+const venueAction = (venue: Venue, action: string) => (venue === "morpho" ? action : `${venue}-${action}`);
+
+export const uiLocked = (s: GameState) => !s.started || !!s.dialog || !!s.panel || s.logOpen || s.mapOpen;
 
 export function districtName(id: DistrictId) {
   return districtById[id]?.name ?? id;
@@ -456,7 +601,7 @@ export function rewardText(r: { xp: number; tokens?: Partial<Record<Token, numbe
 /** Where the player should head next: tracked objective, else the closest quest giver with something to offer. */
 export function waypoint(s: GameState, from: Vector3): { pos: Vec3; label: string } | null {
   const q = s.tracked ? questById[s.tracked] : null;
-  if (q && s.quests[q.id].status === "active") {
+  if (q && s.quests[q.id]?.status === "active") {
     const o = q.objectives.find((x) => (s.quests[q.id].progress[x.id]?.length ?? 0) < (x.count ?? 1));
     if (o?.at === "orbs") {
       const got = s.quests[q.id].progress[o.id] ?? [];
@@ -470,7 +615,7 @@ export function waypoint(s: GameState, from: Vector3): { pos: Vec3; label: strin
     }
   }
   const givers = quests
-    .filter((x) => s.quests[x.id].status === "available")
+    .filter((x) => s.quests[x.id]?.status === "available")
     .map((x) => npcs.find((n) => n.id === x.giver)!)
     .sort((a, b) => dist2(a.position, from) - dist2(b.position, from));
   return givers[0] ? { pos: givers[0].position, label: givers[0].name } : null;

@@ -14,11 +14,12 @@ import {
   Object3D,
   Vector3,
 } from "three";
+import { Ambience } from "./ambience";
 import { districts, jumpPads, palette, roads, WORLD_HALF } from "./config";
 import { live } from "./store";
 
 export const SUN_DIR = new Vector3(0.55, 0.32, -0.77).normalize();
-export const FOG = "#5d86d6";
+export const FOG = "#8a93d8";
 
 export function rng(seed: number) {
   return () => {
@@ -52,14 +53,15 @@ export function Environment() {
       <fog attach="fog" args={[FOG, 160, 760]} />
       <SkyDome />
       <Sun />
-      <hemisphereLight args={["#a9c8ff", "#1b2556", 1.15]} />
+      <hemisphereLight args={["#bcd2ff", "#4a3768", 0.7]} />
       <Ground />
       <Roads />
       <City />
       <Trees />
       <Mountains />
       <Clouds />
-      <Sparkles count={500} scale={[760, 70, 760]} position={[0, 30, 0]} size={5} speed={0.25} opacity={0.6} color="#a9c8ff" />
+      <Ambience />
+      <Sparkles count={120} scale={[600, 60, 600]} position={[0, 30, 0]} size={3} speed={0.08} opacity={0.28} color="#ffd9b8" />
     </>
   );
 }
@@ -68,10 +70,10 @@ function SkyDome() {
   const uniforms = useMemo(
     () => ({
       uSun: { value: SUN_DIR },
-      uZenith: { value: new Color("#071a5c") },
-      uMid: { value: new Color("#2a5fd6") },
+      uZenith: { value: new Color("#0a1f66") },
+      uMid: { value: new Color("#3b63d1") },
       uHorizon: { value: new Color(FOG) },
-      uGlow: { value: new Color("#ffc6a1") },
+      uGlow: { value: new Color("#ffad85") },
     }),
     [],
   );
@@ -94,8 +96,8 @@ function SkyDome() {
             vec3 col = mix(uHorizon, uMid, smoothstep(0.0, 0.25, h));
             col = mix(col, uZenith, smoothstep(0.25, 0.9, h));
             float sun = max(dot(vDir, uSun), 0.0);
-            col += uGlow * pow(sun, 6.0) * 0.55 * (1.0 - smoothstep(0.0, 0.5, h));
-            col += vec3(1.0,0.85,0.7) * pow(sun, 900.0) * 6.0;
+            col += uGlow * pow(sun, 4.0) * 0.7 * (1.0 - smoothstep(0.0, 0.5, h));
+            col += vec3(1.0,0.85,0.7) * pow(sun, 900.0) * 2.5;
             vec3 cell = floor(vDir * 420.0);
             float star = step(0.9965, hash(cell)) * smoothstep(0.25, 0.7, h);
             col += vec3(0.8,0.9,1.0) * star * 1.4;
@@ -118,16 +120,16 @@ function Sun() {
   return (
     <directionalLight
       ref={light}
-      color="#ffe0c2"
-      intensity={2.6}
+      color="#ffd3ad"
+      intensity={2.2}
       castShadow
-      shadow-mapSize={[2048, 2048]}
-      shadow-camera-left={-80}
-      shadow-camera-right={80}
-      shadow-camera-top={80}
-      shadow-camera-bottom={-80}
+      shadow-mapSize={[1024, 1024]}
+      shadow-camera-left={-60}
+      shadow-camera-right={60}
+      shadow-camera-top={60}
+      shadow-camera-bottom={-60}
       shadow-camera-near={10}
-      shadow-camera-far={400}
+      shadow-camera-far={300}
       shadow-bias={-0.0004}
       shadow-normalBias={0.05}
     />
@@ -159,9 +161,9 @@ function Ground() {
         sectionSize={24}
         cellThickness={0.6}
         sectionThickness={1.1}
-        cellColor="#1a3a8f"
-        sectionColor="#3d7bff"
-        fadeDistance={320}
+        cellColor="#22346e"
+        sectionColor="#3a5bb8"
+        fadeDistance={260}
         fadeStrength={1.4}
         followCamera
       />
@@ -198,10 +200,14 @@ function Roads() {
   );
 }
 
+/** Shared clock for scenery shaders; ticked once per frame by <City />. */
+export const sceneTime = { value: 0 };
+
 /** Lit-window facades computed from world position, so any box size gets correctly scaled windows. */
 export function windowMaterial() {
   const m = new MeshStandardMaterial({ roughness: 0.55, metalness: 0.25 });
   m.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = sceneTime;
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vWPos; varying vec3 vWNormal;")
       .replace(
@@ -209,7 +215,7 @@ export function windowMaterial() {
         "#include <project_vertex>\n#ifdef USE_INSTANCING\nmat4 wm = modelMatrix * instanceMatrix;\n#else\nmat4 wm = modelMatrix;\n#endif\nvWPos = (wm * vec4(transformed, 1.0)).xyz; vWNormal = normalize(mat3(wm) * objectNormal);",
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vWPos; varying vec3 vWNormal;\nfloat whash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }")
+      .replace("#include <common>", "#include <common>\nuniform float uTime; varying vec3 vWPos; varying vec3 vWNormal;\nfloat whash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }")
       .replace(
         "#include <emissivemap_fragment>",
         `#include <emissivemap_fragment>
@@ -218,34 +224,52 @@ export function windowMaterial() {
         vec2 g = vec2(vWPos.x * n.z + vWPos.z * n.x, vWPos.y) / vec2(2.8, 3.6);
         vec2 c = fract(g);
         float win = step(0.22, c.x) * step(c.x, 0.78) * step(0.28, c.y) * step(c.y, 0.78);
-        float lit = step(0.58, whash(floor(g) + floor(vWPos.xz / 40.0)));
-        vec3 wc = mix(vec3(0.45, 0.75, 1.6), vec3(1.6, 1.2, 0.7), step(0.85, whash(floor(g) * 1.7)));
-        totalEmissiveRadiance += side * win * lit * wc * step(2.0, vWPos.y) * 1.3;`,
+        // Each window re-rolls on its own slow clock, so the city keeps switching lights on and off.
+        float phase = floor(uTime / 18.0 + whash(floor(g) * 3.1) * 7.0);
+        float lit = step(0.5, whash(floor(g) + floor(vWPos.xz / 40.0) + phase * 0.37));
+        vec3 wc = mix(vec3(0.45, 0.75, 1.6), vec3(1.7, 1.15, 0.6), step(0.7, whash(floor(g) * 1.7)));
+        totalEmissiveRadiance += side * win * lit * wc * step(2.0, vWPos.y) * 0.95;`,
       );
   };
   return m;
 }
 
-function City() {
-  const { boxes, caps } = useMemo(() => {
-    const r = rng(7);
-    const boxes: { x: number; z: number; w: number; d: number; h: number; c: Color }[] = [];
-    const tints = ["#d9e5ff", "#a9c1ff", "#5f86f0", "#2c4fb8", "#e8eefc"].map((c) => new Color(c));
-    for (let gx = -340; gx <= 340; gx += 28) {
-      for (let gz = -340; gz <= 340; gz += 28) {
-        const x = gx + (r() - 0.5) * 10;
-        const z = gz + (r() - 0.5) * 10;
-        const dist = Math.hypot(x, z);
-        const w = 9 + r() * 10;
-        const d = 9 + r() * 10;
-        if (dist < 70 || r() < 0.42 || !isFree(x, z, Math.max(w, d) * 0.7)) continue;
-        const h = 8 + r() * 26 + 70 * Math.exp(-dist / 140) * r();
-        boxes.push({ x, z, w, d, h, c: tints[Math.floor(r() * tints.length)] });
-      }
+export interface Block {
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+  h: number;
+  c: Color;
+}
+
+let cityCache: { boxes: Block[]; caps: Block[] } | null = null;
+
+/** The procedural skyline; deterministic, shared by the buildings and their neon trim. */
+export function cityBlocks() {
+  if (cityCache) return cityCache;
+  const r = rng(7);
+  const boxes: Block[] = [];
+  const tints = ["#eef2ff", "#9fb4f5", "#4f74e3", "#ffc9a8", "#8fd9cc", "#c9b4ff", "#ffe6b0"].map((c) => new Color(c));
+  for (let gx = -340; gx <= 340; gx += 28) {
+    for (let gz = -340; gz <= 340; gz += 28) {
+      const x = gx + (r() - 0.5) * 10;
+      const z = gz + (r() - 0.5) * 10;
+      const dist = Math.hypot(x, z);
+      const w = 9 + r() * 10;
+      const d = 9 + r() * 10;
+      if (dist < 70 || r() < 0.42 || !isFree(x, z, Math.max(w, d) * 0.7)) continue;
+      const h = 8 + r() * 26 + 70 * Math.exp(-dist / 140) * r();
+      boxes.push({ x, z, w, d, h, c: tints[Math.floor(r() * tints.length)] });
     }
-    const caps = boxes.filter(() => r() < 0.45);
-    return { boxes, caps };
-  }, []);
+  }
+  const caps = boxes.filter(() => r() < 0.45);
+  return (cityCache = { boxes, caps });
+}
+
+function City() {
+  const { boxes, caps } = cityBlocks();
+  useFrame(({ clock }) => (sceneTime.value = clock.elapsedTime));
   const mesh = useRef<InstancedMesh>(null);
   const capMesh = useRef<InstancedMesh>(null);
   const material = useMemo(windowMaterial, []);
@@ -259,7 +283,7 @@ function City() {
       mesh.current!.setMatrixAt(i, o.matrix);
       mesh.current!.setColorAt(i, b.c);
     });
-    const glow = [new Color(0.4, 1.6, 3.2), new Color(3, 1.1, 0.5), new Color(2.2, 0.8, 3)];
+    const glow = [new Color(0.3, 1.1, 2.2), new Color(2.2, 0.9, 0.4), new Color(1.6, 0.6, 2.2)];
     caps.forEach((b, i) => {
       o.position.set(b.x, b.h + 0.4, b.z);
       o.scale.set(b.w * 0.6, 0.8, b.d * 0.6);
@@ -305,9 +329,23 @@ function Trees() {
   }, []);
   const crown = useRef<InstancedMesh>(null);
   const trunk = useRef<InstancedMesh>(null);
+  const leaves = useMemo(() => {
+    const m = new MeshStandardMaterial({ flatShading: true, roughness: 0.7 });
+    m.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = sceneTime;
+      shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nuniform float uTime;").replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+        vec2 seed = instanceMatrix[3].xz * 0.07;
+        float sway = sin(uTime * 1.4 + seed.x + seed.y) * 0.18 + sin(uTime * 3.1 + seed.y * 2.0) * 0.05;
+        transformed.xz += sway * max(position.y + 1.0, 0.0) * vec2(1.0, 0.6);`,
+      );
+    };
+    return m;
+  }, []);
   useLayoutEffect(() => {
     const o = new Object3D();
-    const greens = ["#1fbf9a", "#2a9df4", "#38d39f", "#1e7fd6"].map((c) => new Color(c));
+    const greens = ["#2fbf71", "#7bd85a", "#1fa58a", "#f2a65a", "#e86f8a"].map((c) => new Color(c));
     trees.forEach((t, i) => {
       o.position.set(t.x, 3.2 * t.s, t.z);
       o.scale.setScalar(t.s);
@@ -325,9 +363,8 @@ function Trees() {
   }, [trees]);
   return (
     <>
-      <instancedMesh ref={crown} args={[undefined, undefined, trees.length]} castShadow>
+      <instancedMesh ref={crown} args={[undefined, leaves, trees.length]} castShadow>
         <icosahedronGeometry args={[2, 0]} />
-        <meshStandardMaterial flatShading roughness={0.7} />
       </instancedMesh>
       <instancedMesh ref={trunk} args={[undefined, undefined, trees.length]} castShadow>
         <cylinderGeometry args={[0.22, 0.32, 1.8, 6]} />
@@ -351,7 +388,7 @@ function Mountains() {
       {peaks.map((p, i) => (
         <mesh key={i} position={[p.x, p.h / 2 - 2, p.z]}>
           <coneGeometry args={[p.w, p.h, 5]} />
-          <meshStandardMaterial color="#1d3478" flatShading roughness={1} />
+          <meshStandardMaterial color="#3a3f8f" flatShading roughness={1} />
         </mesh>
       ))}
     </>
@@ -388,7 +425,7 @@ function Clouds() {
   return (
     <instancedMesh ref={mesh} args={[undefined, undefined, puffs.length]}>
       <icosahedronGeometry args={[1, 1]} />
-      <meshStandardMaterial color="#e6eeff" emissive="#9db8ff" emissiveIntensity={0.25} flatShading transparent opacity={0.9} fog={false} />
+      <meshStandardMaterial color="#ffe9f0" emissive="#ffb3a1" emissiveIntensity={0.18} flatShading transparent opacity={0.9} fog={false} />
     </instancedMesh>
   );
 }

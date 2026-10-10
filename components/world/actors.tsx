@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import { AdditiveBlending, Color, DoubleSide, type Group, type Mesh, type MeshBasicMaterial, Vector3 } from "three";
 import { districts, jumpPads, type NpcDef, npcs, orbs, palette, RACE, type StationDef, stations, type Vec3 } from "./config";
+import { BrandDisc } from "./brand";
 import { FONT } from "./districts";
 import { type Objective, quests } from "./quests";
 import { live, useGame, waypoint } from "./store";
@@ -50,7 +51,7 @@ function isTarget(o: Objective | null, n: NpcDef) {
 
 function Npcs() {
   const status = useGame((s) => s.quests);
-  const offers = useMemo(() => new Set(quests.filter((q) => status[q.id].status === "available").map((q) => q.giver)), [status]);
+  const offers = useMemo(() => new Set(quests.filter((q) => status[q.id]?.status === "available").map((q) => q.giver)), [status]);
   const objective = useGame(currentObjective);
   return (
     <>
@@ -102,9 +103,13 @@ function Npc({ n, offer, target }: { n: NpcDef; offer: boolean; target: boolean 
       {offer && <Marker y={head + 1.6} />}
       {target && <Diamond y={head + (offer ? 3.2 : 1.7)} />}
       <Html ref={label} position={[0, head + 0.7, 0]} center zIndexRange={[10, 0]} pointerEvents="none">
-        <div className={styles.nameplate}>
-          <b>{n.name}</b>
-          <span>{n.title}</span>
+        <div className={styles.nameplate} data-card={n.photo || undefined}>
+          {n.photo && <img src={n.photo} alt="" />}
+          <div>
+            <b>{n.name}</b>
+            <span>{n.title}</span>
+            {n.twitter && <span>@{n.twitter}</span>}
+          </div>
         </div>
       </Html>
     </group>
@@ -126,10 +131,16 @@ function Human({ n }: { n: NpcDef }) {
         <sphereGeometry args={[0.36, 24, 16]} />
         <meshStandardMaterial color="#f1e2d3" roughness={0.6} />
       </mesh>
-      <mesh position={[0, 2.18, 0.2]} scale={[1, 0.45, 0.6]}>
-        <sphereGeometry args={[0.26, 16, 12]} />
-        <meshStandardMaterial color="#0b1640" emissive={n.accent} emissiveIntensity={1.2} roughness={0.1} />
-      </mesh>
+      {n.photo ? (
+        <group position={[0, 2.18, 0.36]}>
+          <BrandDisc src={n.photo} radius={0.28} />
+        </group>
+      ) : (
+        <mesh position={[0, 2.18, 0.2]} scale={[1, 0.45, 0.6]}>
+          <sphereGeometry args={[0.26, 16, 12]} />
+          <meshStandardMaterial color="#0b1640" emissive={n.accent} emissiveIntensity={1.2} roughness={0.1} />
+        </mesh>
+      )}
     </group>
   );
 }
@@ -151,7 +162,11 @@ function Robot({ n }: { n: NpcDef }) {
         <torusGeometry args={[1.45, 0.06, 8, 48]} />
         <meshBasicMaterial color={glow(n.color, 2.4)} toneMapped={false} />
       </mesh>
-      <pointLight color={n.color} intensity={12} distance={8} />
+      {n.photo && (
+        <group position={[0, 0, 1.05]}>
+          <BrandDisc src={n.photo} radius={0.42} />
+        </group>
+      )}
     </group>
   );
 }
@@ -185,9 +200,10 @@ function Diamond({ y }: { y: number }) {
 function Kiosk({ s }: { s: StationDef }) {
   const label = useRef<HTMLDivElement>(null);
   const screen = useRef<MeshBasicMaterial>(null);
+  const base = useMemo(() => new Color(s.color), [s.color]);
   useFade(label, s.position);
   useFrame(({ clock }) => {
-    if (screen.current) screen.current.color.copy(glow(s.color, 1.6 + Math.sin(clock.elapsedTime * 2.5) * 0.4));
+    if (screen.current) screen.current.color.copy(base).multiplyScalar(1.3 + Math.sin(clock.elapsedTime * 2.5) * 0.3);
   });
   return (
     <group position={s.position}>
@@ -195,8 +211,8 @@ function Kiosk({ s }: { s: StationDef }) {
         <cylinderGeometry args={[1.6, 1.8, 0.3, 24]} />
         <meshStandardMaterial color="#0c1a45" metalness={0.5} roughness={0.35} />
       </mesh>
-      <mesh position={[0, 1.2, 0]} castShadow>
-        <boxGeometry args={[0.9, 2, 0.6]} />
+      <mesh position={[0, 1.05, -0.14]} castShadow>
+        <boxGeometry args={[0.72, 1.7, 0.28]} />
         <meshStandardMaterial color="#e6eeff" metalness={0.3} roughness={0.35} />
       </mesh>
       <mesh position={[0, 2.25, 0.05]} rotation-x={-0.25} castShadow>
@@ -207,6 +223,11 @@ function Kiosk({ s }: { s: StationDef }) {
         <planeGeometry args={[1.6, 0.9]} />
         <meshBasicMaterial ref={screen} toneMapped={false} />
       </mesh>
+      {s.logo && (
+        <group position={[0, 2.25, 0.2]} rotation-x={-0.25}>
+          <BrandDisc src={s.logo} radius={0.38} />
+        </group>
+      )}
       <mesh position={[0, 0.32, 0]} rotation-x={-Math.PI / 2}>
         <ringGeometry args={[1.9, 2.15, 48]} />
         <meshBasicMaterial color={glow(s.color, 2)} toneMapped={false} />
@@ -253,7 +274,6 @@ function Orbs() {
                 <torusGeometry args={[1.1, 0.06, 8, 48]} />
                 <meshBasicMaterial color={glow(palette.cyan, 2.5)} toneMapped={false} />
               </mesh>
-              <pointLight color={palette.baseBright} intensity={30} distance={10} />
             </group>
           </group>
         ),
