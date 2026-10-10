@@ -1,9 +1,11 @@
 "use client";
 
-import { usePrivy } from "@privy-io/react-auth";
-import { useEffect, useState } from "react";
-import { PRIVY_ID, Privy } from "@/components/online/privy";
+import { useLogin, usePrivy } from "@privy-io/react-auth";
+import { useEffect } from "react";
+import { ENTER, PRIVY_ID, Privy } from "@/components/online/privy";
 import styles from "./landing.module.css";
+
+const home = () => (typeof window === "undefined" ? undefined : `${window.location.origin}/`);
 
 export function PlayOnline() {
   const card = (
@@ -20,18 +22,27 @@ export function PlayOnline() {
     );
   }
   return (
-    <Privy>
+    <Privy afterOAuth={home()}>
       <Go>{card}</Go>
     </Privy>
   );
 }
 
+function enter() {
+  sessionStorage.setItem(ENTER, "1");
+  location.assign("/online");
+}
+
 function Go({ children }: { children: React.ReactNode }) {
-  const { ready, authenticated, login } = usePrivy();
-  const [enter, setEnter] = useState(false);
+  const { ready, authenticated } = usePrivy();
+  const { login } = useLogin({
+    onComplete: () => {
+      if (sessionStorage.getItem(ENTER)) enter();
+    },
+  });
   useEffect(() => {
-    if (enter && authenticated) location.assign("/online");
-  }, [enter, authenticated]);
+    if (ready && authenticated && sessionStorage.getItem(ENTER)) enter();
+  }, [ready, authenticated]);
   return (
     <button
       type="button"
@@ -39,11 +50,9 @@ function Go({ children }: { children: React.ReactNode }) {
       data-primary
       disabled={!ready}
       onClick={() => {
-        if (authenticated) location.assign("/online");
-        else {
-          setEnter(true);
-          login();
-        }
+        sessionStorage.setItem(ENTER, "1");
+        if (authenticated) enter();
+        else login();
       }}
     >
       {children}

@@ -10,7 +10,7 @@ import { MAX_TX_USD, baseChain } from "@/components/world/onchain";
 import { holdings, type Cloud, useGame } from "@/components/world/store";
 import { connectCloud } from "./cloud";
 import { colorFor, Others, type Peer, useMultiplayer, usePeers } from "./multiplayer";
-import { PRIVY_ID, Privy } from "./privy";
+import { ENTER, PRIVY_ID, Privy } from "./privy";
 import styles from "./online.module.css";
 
 const RPC = process.env.NEXT_PUBLIC_BASE_RPC_URL || undefined;
@@ -25,10 +25,10 @@ export default function Online() {
 }
 
 function Gate() {
-  const { ready, authenticated, login, user, connectWallet } = usePrivy();
+  const { ready, authenticated, user, connectWallet } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
   if (!ready) return <Screen title="Connecting…" />;
-  if (!authenticated) return <Enter login={login} />;
+  if (!authenticated) return <GoHome />;
   const wallet = wallets.find((w) => w.address.toLowerCase() === user?.wallet?.address?.toLowerCase()) ?? wallets[0];
   if (!wallet)
     return walletsReady && user?.wallet?.walletClientType !== "privy" ? (
@@ -39,10 +39,15 @@ function Gate() {
   return <Session key={wallet.address} wallet={wallet} />;
 }
 
-function Enter({ login }: { login: () => void }) {
+function GoHome() {
   useEffect(() => {
-    login();
-  }, [login]);
+    const wait = sessionStorage.getItem(ENTER) ? 4000 : 1600;
+    const t = window.setTimeout(() => {
+      sessionStorage.removeItem(ENTER);
+      location.replace("/");
+    }, wait);
+    return () => clearTimeout(t);
+  }, []);
   return <Screen title="Connecting…" />;
 }
 
@@ -61,6 +66,7 @@ function Session({ wallet }: { wallet: ConnectedWallet }) {
   const [error, setError] = useState<string | null>(null);
   const [deps] = useState(() => ({ wallet, getAccessToken }));
   const handle = user?.twitter?.username;
+  useEffect(() => sessionStorage.removeItem(ENTER), []);
   useEffect(() => {
     const address = deps.wallet.address as Address;
     Promise.all([connectCloud(deps.getAccessToken, address), deps.wallet.getEthereumProvider()])
