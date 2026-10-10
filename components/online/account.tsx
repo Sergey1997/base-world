@@ -1,6 +1,6 @@
 "use client";
 
-import { useExportWallet, useFundWallet, usePrivy } from "@privy-io/react-auth";
+import { useExportWallet, useFundWallet, useLinkAccount, usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { base } from "viem/chains";
@@ -51,6 +51,18 @@ function Account() {
     setNick((body as Me).nickname ?? "");
   }, []);
 
+  const { linkTwitter, linkGoogle, linkEmail, linkWallet } = useLinkAccount({
+    onSuccess: () => {
+      setBusy(null);
+      setError(null);
+      void api();
+    },
+    onError: (code) => {
+      setBusy(null);
+      setError(why(code));
+    },
+  });
+
   const linked = user?.linkedAccounts.length ?? 0;
   useEffect(() => {
     if (ready && !authenticated) router.replace("/");
@@ -63,8 +75,23 @@ function Account() {
     try {
       await fn();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(why(e));
     } finally {
+      setBusy(null);
+    }
+  };
+  /** Call the Privy linker on the click itself so a failed OAuth request is shown, not swallowed. */
+  const connect = (label: string, fn: () => unknown) => () => {
+    setError(null);
+    setBusy(label);
+    try {
+      const out = fn();
+      void Promise.resolve(out).catch((e) => {
+        setError(why(e));
+        setBusy(null);
+      });
+    } catch (e) {
+      setError(why(e));
       setBusy(null);
     }
   };
@@ -113,7 +140,7 @@ function Account() {
               <span>X photo</span>
             </button>
           ) : (
-            <button className={styles.pic} disabled={!!busy} onClick={() => privy.linkTwitter()} title="Link X to use your X photo">
+            <button className={styles.pic} disabled={!!busy} onClick={connect("x", linkTwitter)} title="Link X to use your X photo">
               <span className={styles.glyph}>𝕏</span>
               <span>Use X</span>
             </button>
@@ -160,14 +187,14 @@ function Account() {
             {user.twitter ? (
               <Unlink disabled={!canUnlink || !!busy} onClick={run("x", () => privy.unlinkTwitter(user.twitter!.subject))} />
             ) : (
-              <Link onClick={() => privy.linkTwitter()} />
+              <Link busy={busy === "x"} onClick={connect("x", linkTwitter)} />
             )}
           </Method>
           <Method label="Google" value={user.google?.email}>
-            {user.google ? <Unlink disabled={!canUnlink || !!busy} onClick={run("google", () => privy.unlinkGoogle(user.google!.subject))} /> : <Link onClick={() => privy.linkGoogle()} />}
+            {user.google ? <Unlink disabled={!canUnlink || !!busy} onClick={run("google", () => privy.unlinkGoogle(user.google!.subject))} /> : <Link busy={busy === "google"} onClick={connect("google", linkGoogle)} />}
           </Method>
           <Method label="Email" value={user.email?.address}>
-            {user.email ? <Unlink disabled={!canUnlink || !!busy} onClick={run("email", () => privy.unlinkEmail(user.email!.address))} /> : <Link onClick={() => privy.linkEmail()} />}
+            {user.email ? <Unlink disabled={!canUnlink || !!busy} onClick={run("email", () => privy.unlinkEmail(user.email!.address))} /> : <Link busy={busy === "email"} onClick={connect("email", linkEmail)} />}
           </Method>
           {external.map((w) => (
             <Method key={w.address} label="Wallet" value={short(w.address)} mono>
@@ -175,10 +202,11 @@ function Account() {
             </Method>
           ))}
           <Method label="Wallet" value={external.length ? undefined : null}>
-            <Link label={external.length ? "Add another" : "Connect"} onClick={() => privy.linkWallet()} />
+            <Link label={external.length ? "Add another" : "Connect"} busy={busy === "wallet"} onClick={connect("wallet", linkWallet)} />
           </Method>
         </ul>
         {!canUnlink && <p className={styles.note}>Link another method before removing your only one.</p>}
+        {error && <p className={styles.error}>{error}</p>}
       </section>
 
       {address && (
@@ -268,9 +296,9 @@ function Method({ label, value, mono, children }: { label: string; value?: strin
   );
 }
 
-const Link = ({ onClick, label = "Link" }: { onClick: () => void; label?: string }) => (
-  <button className={styles.ghost} onClick={onClick}>
-    {label}
+const Link = ({ onClick, label = "Link", busy }: { onClick: () => void; label?: string; busy?: boolean }) => (
+  <button type="button" className={styles.ghost} onClick={onClick} disabled={busy}>
+    {busy ? "Opening…" : label}
   </button>
 );
 
@@ -298,3 +326,13 @@ async function square(file: File, size = 256): Promise<Blob> {
 }
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+function why(e: unknown) {
+  const code = typeof e === "string" ? e : e instanceof Error ? e.message : "";
+  if (code === "linked_to_another_user") return "That account is already linked to someone else.";
+  if (code === "disallowed_login_method") return "This sign-in method isn't enabled in Privy.";
+  if (code === "oauth_user_denied") return "Login was cancelled.";
+  if (code === "cannot_link_more_of_type") return "Already linked.";
+  if (code === "must_be_authenticated") return "Sign in first, then link an account.";
+  return code || "Couldn't start the link. Try again.";
+}
