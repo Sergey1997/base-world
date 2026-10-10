@@ -304,6 +304,12 @@ function Minimap() {
 function Tracker() {
   const tracked = useGame((s) => s.tracked);
   const state = useGame((s) => (s.tracked ? s.quests[s.tracked] : null));
+  const dist = useRef<HTMLSpanElement>(null);
+  useTicker(() => {
+    if (!dist.current) return;
+    const wp = waypoint(useGame.getState(), live.pos);
+    dist.current.textContent = wp ? `${Math.round(Math.hypot(wp.pos[0] - live.pos.x, wp.pos[2] - live.pos.z))} m` : "";
+  });
   if (!tracked || !state || state.status !== "active") return null;
   const q = questById[tracked];
   return (
@@ -322,7 +328,10 @@ function Tracker() {
           );
         })}
       </ul>
-      <small>J — quest log</small>
+      <small>
+        <span ref={dist} className={styles.trackerDist} />
+        J — quest log
+      </small>
     </div>
   );
 }

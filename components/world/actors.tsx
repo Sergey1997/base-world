@@ -394,30 +394,42 @@ function LaunchedAgents() {
 
 function Waypoint() {
   const group = useRef<Group>(null);
-  const label = useRef<HTMLDivElement>(null);
-  useFrame(() => {
+  const gem = useRef<Mesh>(null);
+  const shaft = useRef<MeshBasicMaterial>(null);
+  useFrame(({ clock }) => {
     const g = group.current;
-    const el = label.current;
-    if (!g || !el) return;
+    if (!g) return;
     const s = useGame.getState();
     const wp = s.started ? waypoint(s, live.pos) : null;
     const d = wp ? tmp.set(...wp.pos).distanceTo(live.pos) : 0;
-    g.visible = !!wp && d > 6;
-    el.style.display = g.visible ? "" : "none";
+    g.visible = !!wp && d > 8;
     if (!wp || !g.visible) return;
-    g.position.set(...wp.pos);
-    const text = `${wp.label} · ${Math.round(d)} m`;
-    if (el.textContent !== text) el.textContent = text;
+    g.position.set(wp.pos[0], 0, wp.pos[2]);
+    if (gem.current) {
+      gem.current.rotation.y = clock.elapsedTime * 1.3;
+      gem.current.position.y = 3.2 + Math.sin(clock.elapsedTime * 2.1) * 0.22;
+    }
+    if (shaft.current) shaft.current.opacity = d > 80 ? 0.2 : 0.08;
   });
   return (
     <group ref={group} visible={false}>
-      <mesh position-y={60}>
-        <cylinderGeometry args={[0.6, 0.6, 120, 12, 1, true]} />
-        <meshBasicMaterial color={glow(palette.gold, 1.2)} transparent opacity={0.35} blending={AdditiveBlending} depthWrite={false} side={DoubleSide} fog={false} />
+      <mesh position-y={22}>
+        <cylinderGeometry args={[0.12, 0.38, 40, 8, 1, true]} />
+        <meshBasicMaterial
+          ref={shaft}
+          color={glow(palette.gold, 1.05)}
+          transparent
+          opacity={0.12}
+          blending={AdditiveBlending}
+          depthWrite={false}
+          side={DoubleSide}
+          fog={false}
+        />
       </mesh>
-      <Html position={[0, 5, 0]} center zIndexRange={[10, 0]} pointerEvents="none">
-        <div ref={label} className={styles.waypoint} />
-      </Html>
+      <mesh ref={gem}>
+        <octahedronGeometry args={[0.5]} />
+        <meshBasicMaterial color={glow(palette.gold, 2.2)} toneMapped={false} />
+      </mesh>
     </group>
   );
 }

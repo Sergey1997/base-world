@@ -68,15 +68,18 @@ function Floor({ center, radius, color, rings = 3, y = 0.06 }: { center: [number
   return (
     <group position={[center[0], y, center[1]]}>
       <mesh rotation-x={-Math.PI / 2} receiveShadow>
-        <circleGeometry args={[radius, 64]} />
+        <circleGeometry args={[radius, 96]} />
         <meshStandardMaterial color="#1c2f74" roughness={0.8} metalness={0.15} />
       </mesh>
-      {Array.from({ length: rings }, (_, i) => (
-        <mesh key={i} rotation-x={-Math.PI / 2} position-y={0.02}>
-          <ringGeometry args={[radius * (0.35 + i * 0.3) - 0.35, radius * (0.35 + i * 0.3), 96]} />
-          <meshBasicMaterial color={glow(color, 1.25)} toneMapped={false} />
-        </mesh>
-      ))}
+      {Array.from({ length: rings }, (_, i) => {
+        const outer = radius * (0.3 + i * 0.22);
+        return (
+          <mesh key={i} rotation-x={-Math.PI / 2} position-y={0.006}>
+            <ringGeometry args={[outer - 0.32, outer, 96]} />
+            <meshBasicMaterial color={glow(color, 1.25)} toneMapped={false} />
+          </mesh>
+        );
+      })}
     </group>
   );
 }

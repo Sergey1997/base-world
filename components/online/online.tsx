@@ -1,6 +1,6 @@
 "use client";
 
-import { type ConnectedWallet, PrivyProvider, useFundWallet, usePrivy, useWallets } from "@privy-io/react-auth";
+import { type ConnectedWallet, useFundWallet, usePrivy, useWallets } from "@privy-io/react-auth";
 import { useEffect, useState } from "react";
 import { type Address, createWalletClient, custom } from "viem";
 import { base } from "viem/chains";
@@ -10,25 +10,17 @@ import { MAX_TX_USD, baseChain } from "@/components/world/onchain";
 import { holdings, type Cloud, useGame } from "@/components/world/store";
 import { connectCloud } from "./cloud";
 import { colorFor, Others, type Peer, useMultiplayer, usePeers } from "./multiplayer";
+import { PRIVY_ID, Privy } from "./privy";
 import styles from "./online.module.css";
 
-const APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
 const RPC = process.env.NEXT_PUBLIC_BASE_RPC_URL || undefined;
 
 export default function Online() {
-  if (!APP_ID) return <Screen title="Online mode isn't configured" body="Set NEXT_PUBLIC_PRIVY_APP_ID in .env.local and restart the dev server." />;
+  if (!PRIVY_ID) return <Screen title="Online mode isn't configured" body="Set NEXT_PUBLIC_PRIVY_APP_ID in .env.local and restart the dev server." />;
   return (
-    <PrivyProvider
-      appId={APP_ID}
-      config={{
-        appearance: { theme: "#070e2c", accentColor: "#0052ff", logo: "/world/brands/base.png", landingHeader: "Enter Base World", walletChainType: "ethereum-only" },
-        embeddedWallets: { ethereum: { createOnLogin: "users-without-wallets" } },
-        defaultChain: base,
-        supportedChains: [base],
-      }}
-    >
+    <Privy>
       <Gate />
-    </PrivyProvider>
+    </Privy>
   );
 }
 
@@ -36,14 +28,7 @@ function Gate() {
   const { ready, authenticated, login, user, connectWallet } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
   if (!ready) return <Screen title="Connecting…" />;
-  if (!authenticated)
-    return (
-      <Screen
-        title="Play online"
-        body="Sign in with X, Google, email or your wallet. Progress is saved to your account, everyone shares one world, and DeFi actions are real Base transactions from your wallet."
-        action={{ label: "Sign in", onClick: login }}
-      />
-    );
+  if (!authenticated) return <Enter login={login} />;
   const wallet = wallets.find((w) => w.address.toLowerCase() === user?.wallet?.address?.toLowerCase()) ?? wallets[0];
   if (!wallet)
     return walletsReady && user?.wallet?.walletClientType !== "privy" ? (
@@ -52,6 +37,13 @@ function Gate() {
       <Screen title="Creating your wallet…" />
     );
   return <Session key={wallet.address} wallet={wallet} />;
+}
+
+function Enter({ login }: { login: () => void }) {
+  useEffect(() => {
+    login();
+  }, [login]);
+  return <Screen title="Connecting…" />;
 }
 
 interface Live {
@@ -68,6 +60,7 @@ function Session({ wallet }: { wallet: ConnectedWallet }) {
   const [session, setSession] = useState<Live | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deps] = useState(() => ({ wallet, getAccessToken }));
+  const handle = user?.twitter?.username;
   useEffect(() => {
     const address = deps.wallet.address as Address;
     Promise.all([connectCloud(deps.getAccessToken, address), deps.wallet.getEthereumProvider()])
@@ -77,6 +70,10 @@ function Session({ wallet }: { wallet: ConnectedWallet }) {
       })
       .catch((e: Error) => setError(e.message));
   }, [deps, id]);
+  useEffect(() => {
+    if (!handle) return;
+    setSession((s) => (s && s.me.name !== `@${handle}` ? { ...s, me: { ...s.me, name: `@${handle}` } } : s));
+  }, [handle]);
   if (error) return <Screen title="Couldn't start online mode" body={error} action={{ label: "Back to menu", onClick: () => location.assign("/") }} />;
   if (!session) return <Screen title="Loading your save…" />;
   return <World session={session} wallet={wallet} />;
@@ -88,7 +85,7 @@ function World({ session, wallet }: { session: Live; wallet: ConnectedWallet }) 
 }
 
 function WalletBar({ me, flush, wallet }: { me: Peer; flush: () => Promise<void>; wallet: ConnectedWallet }) {
-  const { logout } = usePrivy();
+  const { logout, user, linkTwitter } = usePrivy();
   const peers = usePeers();
   const sync = useGame((s) => s.sync);
   const eth = useGame((s) => holdings(s).wallet.ETH);
@@ -97,6 +94,7 @@ function WalletBar({ me, flush, wallet }: { me: Peer; flush: () => Promise<void>
   const [open, setOpen] = useState<"send" | null>(null);
   const [copied, setCopied] = useState(false);
   const embedded = wallet.walletClientType === "privy";
+  const twitter = user?.twitter;
 
   useEffect(() => {
     const t = setInterval(() => document.visibilityState === "visible" && void sync(), 20_000);
@@ -107,7 +105,16 @@ function WalletBar({ me, flush, wallet }: { me: Peer; flush: () => Promise<void>
     <div className={styles.bar}>
       <div className={styles.row}>
         <i className={styles.dot} style={{ background: me.color }} />
-        <b>{me.name}</b>
+        <b>{twitter?.username ? `@${twitter.username}` : me.name}</b>
+        {twitter?.username ? (
+          <a className={styles.chip} href={`https://x.com/${twitter.username}`} target="_blank" rel="noreferrer">
+            X
+          </a>
+        ) : (
+          <button className={styles.chip} onClick={() => linkTwitter()} title="Link your X account">
+            Link X
+          </button>
+        )}
         <button
           className={styles.chip}
           title="Copy address"

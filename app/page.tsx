@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { PlayOnline } from "@/components/landing/play-online";
 import hero from "@/components/landing/hero.webp";
 import styles from "@/components/landing/landing.module.css";
 
@@ -19,10 +20,7 @@ export default function Home() {
             <b>Play offline</b>
             <span>Jump straight in. No account, progress stays in this browser, every transaction is simulated.</span>
           </a>
-          <a href="/online" className={styles.mode} data-primary>
-            <b>Play online</b>
-            <span>Sign in with X, Google, email or a wallet. One shared world, cloud saves, real Base transactions from your wallet.</span>
-          </a>
+          <PlayOnline />
         </div>
       </section>
     </main>

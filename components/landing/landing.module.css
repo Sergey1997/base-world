@@ -83,11 +83,19 @@
   background: rgba(7, 14, 44, 0.7);
   backdrop-filter: blur(10px);
   color: inherit;
+  font: inherit;
+  text-align: left;
   text-decoration: none;
+  cursor: pointer;
   transition:
     transform 0.15s,
     border-color 0.15s,
     box-shadow 0.15s;
+}
+
+.mode:disabled {
+  opacity: 0.65;
+  cursor: wait;
 }
 
 .mode b {

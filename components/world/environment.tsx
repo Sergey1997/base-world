@@ -171,28 +171,86 @@ function Ground() {
   );
 }
 
+/** Circular district floors that sit above the road mesh and must hide its markings. */
+function roadPads() {
+  return districts
+    .filter((d) => d.id === "plaza" || d.id === "virtuals" || d.look)
+    .map((d) => ({
+      x: d.center[0],
+      z: d.center[1],
+      r: d.id === "plaza" ? 46 : d.id === "virtuals" ? 72 : d.radius - 4,
+    }));
+}
+
+function circleHits(ax: number, az: number, bx: number, bz: number, cx: number, cz: number, r: number) {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const fx = ax - cx;
+  const fz = az - cz;
+  const a = dx * dx + dz * dz;
+  if (a < 1e-8) return [];
+  const b = 2 * (fx * dx + fz * dz);
+  const c = fx * fx + fz * fz - r * r;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return [];
+  const s = Math.sqrt(disc);
+  return [(-b - s) / (2 * a), (-b + s) / (2 * a)].filter((t) => t >= -0.02 && t <= 1.02).sort((p, q) => p - q);
+}
+
+/** Keep a ribbon of width `half*2` outside every pad (or tucked under it when `padInset` is negative). */
+function clipRoad(ax: number, az: number, bx: number, bz: number, pads: { x: number; z: number; r: number }[], half: number, padInset: number) {
+  let t0 = 0;
+  let t1 = 1;
+  for (const p of pads) {
+    const r = Math.max(1, p.r - padInset);
+    const er = Math.sqrt(Math.max(0, r * r - half * half));
+    const hits = circleHits(ax, az, bx, bz, p.x, p.z, er);
+    if ((ax - p.x) ** 2 + (az - p.z) ** 2 < er * er && hits.length) t0 = Math.max(t0, hits[0]);
+    if ((bx - p.x) ** 2 + (bz - p.z) ** 2 < er * er && hits.length) t1 = Math.min(t1, hits[hits.length - 1]);
+  }
+  if (t1 - t0 < 0.04) return null;
+  return [ax + (bx - ax) * t0, az + (bz - az) * t0, ax + (bx - ax) * t1, az + (bz - az) * t1] as const;
+}
+
+function grow(ax: number, az: number, bx: number, bz: number, extra: number) {
+  const len = Math.hypot(bx - ax, bz - az);
+  if (len < 1) return [ax, az, bx, bz] as const;
+  const ux = (bx - ax) / len;
+  const uz = (bz - az) / len;
+  return [ax - ux * extra, az - uz * extra, bx + ux * extra, bz + uz * extra] as const;
+}
+
 function Roads() {
+  const pads = useMemo(roadPads, []);
   return (
     <>
       {roads.map(([ax, az, bx, bz], i) => {
-        const len = Math.hypot(bx - ax, bz - az);
-        const angle = Math.atan2(bx - ax, bz - az);
+        const bed = clipRoad(...grow(ax, az, bx, bz, 4), pads, 7, -2);
+        const mark = clipRoad(...grow(ax, az, bx, bz, 1), pads, 6.8, 1.2);
+        if (!bed) return null;
+        const [x0, z0, x1, z1] = bed;
         return (
-          <group key={i} position={[(ax + bx) / 2, 0.05, (az + bz) / 2]} rotation-y={angle}>
-            <mesh rotation-x={-Math.PI / 2} receiveShadow>
-              <planeGeometry args={[14, len + 14]} />
-              <meshStandardMaterial color="#0a1230" roughness={0.7} metalness={0.2} />
-            </mesh>
-            {[-6.6, 6.6].map((x) => (
-              <mesh key={x} position={[x, 0.02, 0]} rotation-x={-Math.PI / 2}>
-                <planeGeometry args={[0.35, len + 14]} />
-                <meshBasicMaterial color={[0.4, 1.4, 3]} toneMapped={false} />
+          <group key={i}>
+            <group position={[(x0 + x1) / 2, 0.05, (z0 + z1) / 2]} rotation-y={Math.atan2(x1 - x0, z1 - z0)}>
+              <mesh rotation-x={-Math.PI / 2} receiveShadow>
+                <planeGeometry args={[14, Math.hypot(x1 - x0, z1 - z0)]} />
+                <meshStandardMaterial color="#0a1230" roughness={0.7} metalness={0.2} />
               </mesh>
-            ))}
-            <mesh position={[0, 0.02, 0]} rotation-x={-Math.PI / 2}>
-              <planeGeometry args={[0.25, len + 14]} />
-              <meshBasicMaterial color="#c9d8ff" transparent opacity={0.35} />
-            </mesh>
+            </group>
+            {mark && (
+              <group position={[(mark[0] + mark[2]) / 2, 0.054, (mark[1] + mark[3]) / 2]} rotation-y={Math.atan2(mark[2] - mark[0], mark[3] - mark[1])}>
+                {[-6.6, 6.6].map((x) => (
+                  <mesh key={x} position={[x, 0, 0]} rotation-x={-Math.PI / 2}>
+                    <planeGeometry args={[0.35, Math.hypot(mark[2] - mark[0], mark[3] - mark[1])]} />
+                    <meshBasicMaterial color={[0.4, 1.4, 3]} toneMapped={false} />
+                  </mesh>
+                ))}
+                <mesh rotation-x={-Math.PI / 2}>
+                  <planeGeometry args={[0.25, Math.hypot(mark[2] - mark[0], mark[3] - mark[1])]} />
+                  <meshBasicMaterial color="#c9d8ff" transparent opacity={0.35} />
+                </mesh>
+              </group>
+            )}
           </group>
         );
       })}
