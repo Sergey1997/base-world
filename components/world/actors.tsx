@@ -7,7 +7,7 @@ import { AdditiveBlending, Color, DoubleSide, type Group, type Mesh, type MeshBa
 import { districts, jumpPads, type NpcDef, npcs, orbs, palette, RACE, type StationDef, stations, type Vec3 } from "./config";
 import { BrandDisc } from "./brand";
 import { FONT } from "./districts";
-import { type Objective, quests } from "./quests";
+import { MAX_LEVEL, npcLevel, type Objective, quests } from "./quests";
 import { live, useGame, waypoint } from "./store";
 import styles from "./world.module.css";
 
@@ -62,13 +62,18 @@ function Npcs() {
   );
 }
 
-/** Hides a nameplate once the player is far away, without re-rendering React. */
+/** Hides a nameplate once the player is far away, with hysteresis so the edge doesn't flicker. */
 function useFade(ref: React.RefObject<HTMLDivElement | null>, at: Vec3, range = LABEL_RANGE) {
+  const shown = useRef(false);
   useFrame(() => {
     const el = ref.current;
     if (!el) return;
-    const near = tmp.set(...at).distanceTo(live.pos) < range;
-    if ((el.style.display !== "none") !== near) el.style.display = near ? "" : "none";
+    const d = tmp.set(...at).distanceTo(live.pos);
+    const next = shown.current ? d < range + 12 : d < range;
+    if (next === shown.current) return;
+    shown.current = next;
+    el.style.visibility = next ? "visible" : "hidden";
+    el.style.opacity = next ? "1" : "0";
   });
 }
 
@@ -77,6 +82,7 @@ function Npc({ n, offer, target }: { n: NpcDef; offer: boolean; target: boolean 
   const label = useRef<HTMLDivElement>(null);
   const agent = n.kind === "agent";
   const head = agent ? 2.2 : 2.6;
+  const lvl = npcLevel(n);
   useFade(label, n.position);
 
   useFrame(({ clock }) => {
@@ -102,14 +108,13 @@ function Npc({ n, offer, target }: { n: NpcDef; offer: boolean; target: boolean 
       <group ref={body}>{agent ? <Robot n={n} /> : <Human n={n} />}</group>
       {offer && <Marker y={head + 1.6} />}
       {target && <Diamond y={head + (offer ? 3.2 : 1.7)} />}
-      <Html ref={label} position={[0, head + 0.7, 0]} center zIndexRange={[10, 0]} pointerEvents="none">
-        <div className={styles.nameplate} data-card={n.photo || undefined}>
-          {n.photo && <img src={n.photo} alt="" />}
-          <div>
-            <b>{n.name}</b>
-            <span>{n.title}</span>
-            {n.twitter && <span>@{n.twitter}</span>}
-          </div>
+      <Html ref={label} position={[0, head + 0.7, 0]} center zIndexRange={[10, 0]} pointerEvents="none" style={{ visibility: "hidden", opacity: 0 }}>
+        <div className={styles.nameplate} data-kind={n.kind} data-max={lvl >= MAX_LEVEL || undefined}>
+          <b>
+            <em>{lvl}</em>
+            {n.name}
+          </b>
+          <span>&lt;{n.title}&gt;</span>
         </div>
       </Html>
     </group>
@@ -232,7 +237,7 @@ function Kiosk({ s }: { s: StationDef }) {
         <ringGeometry args={[1.9, 2.15, 48]} />
         <meshBasicMaterial color={glow(s.color, 2)} toneMapped={false} />
       </mesh>
-      <Html ref={label} position={[0, 3.4, 0]} center zIndexRange={[10, 0]} pointerEvents="none">
+      <Html ref={label} position={[0, 3.4, 0]} center zIndexRange={[10, 0]} pointerEvents="none" style={{ visibility: "hidden", opacity: 0 }}>
         <div className={styles.nameplate} data-kind="station">
           <b>{s.label}</b>
         </div>
@@ -453,7 +458,11 @@ function Interactions() {
       if (d < bestD) [best, bestD] = [it.id, d];
     }
     g.setNearby(best);
-    const zone = zones.find((d) => Math.hypot(x - d.center[0], z - d.center[1]) < d.radius && (d.minY === undefined || y >= d.minY));
+    const here = g.district;
+    const zone = zones.find((d) => {
+      const pad = here === d.id ? 10 : 0;
+      return Math.hypot(x - d.center[0], z - d.center[1]) < d.radius + pad && (d.minY === undefined || y >= d.minY);
+    });
     g.setDistrict(zone?.id ?? null);
   });
   return null;

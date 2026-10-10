@@ -80,6 +80,16 @@ export const districts: DistrictDef[] = [
     logo: "/world/brands/aave.png",
     look: { accent: "#d478c0", sign: "AAVE", tagline: "Borrow it. Use it. Return it. One block.", towers: 4, motif: "vault" },
   },
+  {
+    id: "kickoff",
+    name: "Kickoff",
+    center: [-255, -10],
+    radius: 50,
+    color: "#ffe94a",
+    road: [-50, 0, -205, -8],
+    logo: "/world/brands/kickoff.png",
+    look: { accent: "#ffe94a", sign: "KICKOFF", tagline: "Launch a token. Ride the curve.", towers: 5, motif: "pylon" },
+  },
 ];
 
 export const districtById = Object.fromEntries(districts.map((d) => [d.id, d])) as Record<DistrictId, DistrictDef>;
@@ -103,6 +113,8 @@ export interface NpcDef {
   accent: string;
   tags?: string[];
   greeting: string[];
+  /** Defaults: humans are maxed, agents are high but not capped. */
+  level?: number;
   persona?: string;
   photo?: string;
   twitter?: string;
@@ -307,9 +319,25 @@ export const npcs: NpcDef[] = [
     url: "https://aave.com",
     greeting: ["Boo. Sorry — habit. Want to borrow a fortune for exactly one block?", "Flash loans are the only loans I trust: they always come back."],
   },
+  {
+    id: "kip",
+    name: "Coach Kip",
+    title: "Launch Coach, Kickoff",
+    kind: "human",
+    position: [-238, 0, -4],
+    color: "#ffe94a",
+    accent: "#0b0d12",
+    photo: "/world/brands/kickoff.png",
+    twitter: "kickoffdotfun",
+    url: "https://www.kickoff.fun",
+    greeting: [
+      "Every Spark starts on the curve. Buy early, the price climbs; hit 10 ETH and it graduates to Aerodrome.",
+      "Holders earn reflections on every trade. Creators earn a cut too. Name it, ticker it, kick it off.",
+    ],
+  },
 ];
 
-export type PanelId = "swap" | "pool" | "vote" | "launch" | "lend" | "hooks" | "flash" | "aave" | "docs";
+export type PanelId = "swap" | "pool" | "vote" | "launch" | "lend" | "hooks" | "flash" | "aave" | "kickoff" | "docs";
 
 export interface StationDef {
   id: string;
@@ -329,6 +357,7 @@ export const stations: StationDef[] = [
   { id: "station-lend", label: "Morpho Vault", panel: "lend", position: [-210, 0, -150], color: "#4d8fff", logo: "/world/brands/morpho.png" },
   { id: "station-hooks", label: "Uniswap Hook", panel: "hooks", position: [-24, 0, 240], color: "#ff4da6", logo: "/world/brands/uniswap.png" },
   { id: "station-flash", label: "Aave Flash Loan", panel: "flash", position: [205, 0, -282], color: "#d478c0", logo: "/world/brands/aave.png" },
+  { id: "station-kickoff", label: "Kickoff Launchpad", panel: "kickoff", position: [-262, 0, 12], color: "#ffe94a", logo: "/world/brands/kickoff.png" },
 ];
 
 export const orbs: Vec3[] = [

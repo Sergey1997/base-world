@@ -21,6 +21,7 @@ const STATION_BLURB: Record<string, string> = {
   "station-lend": "Supply ETH, borrow USDC, watch your health factor.",
   "station-hooks": "Swaps that bend the rules — try two different hooks.",
   "station-flash": "Borrow a fortune, use it, return it. One block.",
+  "station-kickoff": "Launch a Spark token, then buy and sell on its bonding curve.",
 };
 
 const DISTRICT_BLURB: Record<string, string> = {
@@ -32,6 +33,7 @@ const DISTRICT_BLURB: Record<string, string> = {
   bankr: "A wallet that talks back. Trade, check bags, launch a token.",
   uniswap: "Every stall here bends the swap a little differently.",
   aave: "Flash loans and one-block heists. Borrow it. Use it. Return it.",
+  kickoff: "Token launches on a bonding curve that graduate to Aerodrome.",
 };
 
 /** The painted atlas covers the populated world, not the empty mountains beyond. */

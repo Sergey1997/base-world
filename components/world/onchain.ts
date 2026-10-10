@@ -1,6 +1,6 @@
-import { type Address, createPublicClient, formatUnits, type Hash, http, isAddress, maxUint256, parseUnits, type WalletClient } from "viem";
+import { type Address, createPublicClient, formatUnits, type Hash, http, isAddress, maxUint256, parseEventLogs, parseUnits, type WalletClient } from "viem";
 import { base } from "viem/chains";
-import { type ChainAdapter, fmt, type Holdings, mockChain, type Token, tokens, type TxReceipt } from "./chain";
+import { type ChainAdapter, fmt, type Holdings, mockChain, type Spark, type Token, tokens, type TxReceipt } from "./chain";
 import {
   AAVE,
   aaveGatewayAbi,
@@ -10,6 +10,9 @@ import {
   DECIMALS,
   ERC20,
   erc20Abi,
+  KICKOFF,
+  kickoffCurveAbi,
+  kickoffFactoryAbi,
   MORPHO,
   morphoAbi,
   wethAbi,
@@ -30,8 +33,8 @@ const minus = (amount: bigint) => amount - (amount * SLIPPAGE_BPS) / 10_000n;
 const deadline = () => BigInt(Math.floor(Date.now() / 1000) + 600);
 
 /**
- * The real thing: Aerodrome, Morpho Blue and Aave V3 on Base mainnet, signed by the player's wallet.
- * Features without a safe wallet-only path (veAERO votes, launchpads, hooks, flash loans) stay simulated.
+ * The real thing: Aerodrome, Morpho Blue, Aave V3 and Kickoff on Base mainnet, signed by the player's wallet.
+ * Features without a safe wallet-only path (veAERO votes, Virtuals launches, hooks, flash loans) stay simulated.
  */
 export function baseChain(wallet: WalletClient, account: Address, rpc?: string): ChainAdapter {
   const pub = createPublicClient({ chain: base, transport: http(rpc || undefined), batch: { multicall: true } });
@@ -68,6 +71,16 @@ export function baseChain(wallet: WalletClient, account: Address, rpc?: string):
   };
 
   const receipt = (hash: Hash, summary: string): TxReceipt => ({ hash, summary, at: Date.now(), explorer: explorer(hash) });
+
+  const sparkHeld = async (token: Address) => pub.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [account] });
+
+  /** Once a Spark migrates, its curve stops trading and the token lives on Aerodrome. */
+  const sparkCurve = async (spark: Spark) => {
+    const curve = spark.curve as Address;
+    if (await pub.readContract({ address: curve, abi: kickoffCurveAbi, functionName: "migrated" }))
+      throw new Error(`$${spark.ticker} graduated to Aerodrome — trade it on kickoff.fun.`);
+    return curve;
+  };
 
   /** Best of: direct pool, or one hop through WETH or USDC. */
   const route = async (from: Token, to: Token, amountIn: bigint) => {
@@ -238,6 +251,62 @@ export function baseChain(wallet: WalletClient, account: Address, rpc?: string):
         );
       }
       return receipt(hash, `Repaid ${full ? "the full loan" : `${fmt(cash)} USDC`} on ${venue === "aave" ? "Aave V3" : "Morpho"}`);
+    },
+
+    async launchSpark(name, ticker, devBuy) {
+      cap(devBuy * tokens.ETH.usd);
+      const wei = devBuy > 0 ? units(devBuy, "ETH") : 0n;
+      keepGas(wei);
+      await ready();
+      const hash = await mined(
+        await wallet.writeContract({ account, chain: base, address: KICKOFF.factory, abi: kickoffFactoryAbi, functionName: "createToken", args: [name, ticker, account], value: wei }),
+      );
+      const { logs } = await pub.getTransactionReceipt({ hash });
+      const created = parseEventLogs({ abi: kickoffFactoryAbi, eventName: "TokenCreated", logs })[0];
+      if (!created) throw new Error(`$${ticker} launched but Kickoff didn't report its address. Check ${explorer(hash)}`);
+      const { token, bondingCurve } = created.args;
+      const [held, raised] = await Promise.all([sparkHeld(token), pub.readContract({ address: bondingCurve, abi: kickoffCurveAbi, functionName: "realEthReserve" })]);
+      const spark = { name, ticker, token, curve: bondingCurve, held: +formatUnits(held, 18), raised: +formatUnits(raised, 18) };
+      return { ...receipt(hash, `Kicked off $${ticker}${devBuy > 0 ? ` with a ${fmt(devBuy)} ETH dev buy` : ""} on Kickoff`), spark };
+    },
+
+    async quoteSpark(spark, side, amount) {
+      if (!(amount > 0)) return 0;
+      const functionName = side === "buy" ? "getNetTokensOut" : "getNetEthOut";
+      const out = await pub.readContract({ address: spark.curve as Address, abi: kickoffCurveAbi, functionName, args: [parseUnits(amount.toFixed(18), 18)] });
+      return +formatUnits(out, 18);
+    },
+
+    async tradeSpark(spark, side, amount) {
+      const curve = await sparkCurve(spark);
+      const token = spark.token as Address;
+      const args = { account, chain: base, address: curve, abi: kickoffCurveAbi } as const;
+      let hash: Hash;
+      let amountOut: number;
+      if (side === "buy") {
+        cap(amount * tokens.ETH.usd);
+        const wei = units(amount, "ETH");
+        keepGas(wei);
+        await ready();
+        const out = await pub.readContract({ address: curve, abi: kickoffCurveAbi, functionName: "getNetTokensOut", args: [wei] });
+        hash = await mined(await wallet.writeContract({ ...args, functionName: "buy", args: [minus(out), deadline()], value: wei }));
+        amountOut = +formatUnits(out, 18);
+      } else {
+        const balance = await sparkHeld(token);
+        const want = parseUnits(amount.toFixed(18), 18);
+        const wei = want > balance ? balance : want;
+        if (wei === 0n) throw new Error(`You don't hold any $${spark.ticker}.`);
+        const out = await pub.readContract({ address: curve, abi: kickoffCurveAbi, functionName: "getNetEthOut", args: [wei] });
+        cap(+formatUnits(out, 18) * tokens.ETH.usd);
+        await ready();
+        await allow(token, curve, wei);
+        hash = await mined(await wallet.writeContract({ ...args, functionName: "sell", args: [wei, minus(out), deadline()] }));
+        amountOut = +formatUnits(out, 18);
+      }
+      const [held, raised] = await Promise.all([sparkHeld(token), pub.readContract({ address: curve, abi: kickoffCurveAbi, functionName: "realEthReserve" })]);
+      const next = { ...spark, held: +formatUnits(held, 18), raised: +formatUnits(raised, 18) };
+      const summary = side === "buy" ? `Bought ~${fmt(amountOut)} $${spark.ticker} for ${fmt(amount)} ETH` : `Sold ${fmt(amount)} $${spark.ticker} for ~${fmt(amountOut)} ETH`;
+      return { ...receipt(hash, `${summary} on Kickoff`), spark: next, amountOut };
     },
 
     async send(to, token, amount) {

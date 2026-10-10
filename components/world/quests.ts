@@ -210,6 +210,23 @@ export const quests: QuestDef[] = [
     reward: { xp: 300 },
   },
   {
+    id: "kickoff",
+    title: "Kick It Off",
+    kind: "Protocol",
+    giver: "kip",
+    summary: "Launch a Spark token on Kickoff, buy more on its bonding curve, then take some profit.",
+    offer: "Got a name in your head? Turn it into a token. Launch a Spark at the pad, buy a little more on the curve so the price climbs, then sell a slice. That's the whole game — until it graduates.",
+    hint: "Open the Kickoff Launchpad: Launch → Buy → Sell.",
+    done: "Launched, pumped, trimmed. You've got the instincts. See you at graduation.",
+    requires: ["gm"],
+    objectives: [
+      { id: "launch", label: "Launch a Spark token", event: "action", match: "spark-launch", at: at("station-kickoff") },
+      { id: "buy", label: "Buy on the bonding curve", event: "action", match: "spark-buy", at: at("station-kickoff") },
+      { id: "sell", label: "Sell some of your Spark", event: "action", match: "spark-sell", at: at("station-kickoff") },
+    ],
+    reward: { xp: 300 },
+  },
+  {
     id: "hello",
     title: "Hello, Base",
     kind: "Builder",
@@ -330,11 +347,23 @@ export function matches(o: Objective, e: QuestEvent): string | null {
   }
 }
 
+export const MAX_LEVEL = 99;
 export const xpForLevel = (level: number) => 125 * level * (level + 1);
+export const xpCap = xpForLevel(MAX_LEVEL - 1);
 
 export function levelFor(xp: number) {
   let level = 1;
-  while (xp >= xpForLevel(level)) level++;
+  while (level < MAX_LEVEL && xp >= xpForLevel(level)) level++;
+  if (level >= MAX_LEVEL) return { level: MAX_LEVEL, progress: 1, next: xpCap, maxed: true };
   const floor = level === 1 ? 0 : xpForLevel(level - 1);
-  return { level, progress: (xp - floor) / (xpForLevel(level) - floor), next: xpForLevel(level) };
+  return { level, progress: (xp - floor) / (xpForLevel(level) - floor), next: xpForLevel(level), maxed: false };
+}
+
+/** Named humans are maxed; agents sit in the high 30s–60s so the cap still means something. */
+export function npcLevel(n: { id: string; kind: string; level?: number }) {
+  if (n.level) return n.level;
+  if (n.kind === "human") return MAX_LEVEL;
+  let h = 0;
+  for (const c of n.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return 36 + (h % 28);
 }

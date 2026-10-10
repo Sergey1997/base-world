@@ -44,6 +44,34 @@ export const AAVE = {
   vDebtUSDC: "0x59dca05b6c26dbd64b5381374aAaC5CD05644C28",
 } as const;
 
+/** Kickoff (kickoff.fun): Spark tokens on a bonding curve that migrate to Aerodrome; addresses from the kickoff.fun app bundle. */
+export const KICKOFF = {
+  factory: "0xeBb05d66e973cd8d2CF1AB4217AF6a01B52D0C4e",
+  tokenDeployer: "0x11f5255A4632987D57e08Cad5017393D9fF9502d",
+  lpLocker: "0x59819c4DdB8943003bf1376CbEBE1cecbC87cefd",
+} as const;
+
+export const kickoffFactoryAbi = parseAbi([
+  "function createToken(string name_, string symbol_, address creator) payable returns (address tokenAddr, address bcAddr)",
+  "function tokenDeployer() view returns (address)",
+  "function lpLocker() view returns (address)",
+  "function router() view returns (address)",
+  "function weth() view returns (address)",
+  "function allTokensLength() view returns (uint256)",
+  "function initialMcapInEth() view returns (uint256)",
+  "function migrationMcapInEth() view returns (uint256)",
+  "event TokenCreated(address indexed token, address indexed bondingCurve, address indexed creator, string name, string symbol)",
+]);
+
+export const kickoffCurveAbi = parseAbi([
+  "function buy(uint256 minTokensOut, uint256 deadline) payable",
+  "function sell(uint256 tokenAmount, uint256 minEthOut, uint256 deadline)",
+  "function getNetTokensOut(uint256 ethIn) view returns (uint256)",
+  "function getNetEthOut(uint256 tokenAmount) view returns (uint256)",
+  "function realEthReserve() view returns (uint256)",
+  "function migrated() view returns (bool)",
+]);
+
 export const erc20Abi = parseAbi([
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",

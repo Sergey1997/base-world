@@ -2,10 +2,10 @@ import { Vector3 } from "three";
 import { create } from "zustand";
 import { persist, type PersistStorage } from "zustand/middleware";
 import { agentReply, parseBankerIntent, personas } from "./agents";
-import { type ChainAdapter, fmt, type Holdings, LIQUIDATION_LTV, mockChain, type Position, type Token, tokens, type TxReceipt, type Venue, venues } from "./chain";
+import { type ChainAdapter, fmt, type Holdings, LIQUIDATION_LTV, mockChain, type Position, type Side, type Spark, type Token, tokens, type TxReceipt, type Venue, venues } from "./chain";
 import { type DistrictId, districtById, npcs, orbs, type PanelId, RACE, SPAWN, stations, type Vec3 } from "./config";
 import { docById } from "./docs";
-import { levelFor, matches, type QuestEvent, questById, quests } from "./quests";
+import { levelFor, matches, MAX_LEVEL, type QuestEvent, questById, quests, xpCap } from "./quests";
 
 /** Per-frame values written by the scene and read by the HUD without re-rendering. */
 export const live = {
@@ -88,6 +88,7 @@ interface Persisted {
   badges: string[];
   agents: LaunchedAgent[];
   deployed: { name: string; ticker: string }[];
+  sparks: Spark[];
   vaults: Record<Venue, Position>;
   txs: TxReceipt[];
   bestRace: number | null;
@@ -130,6 +131,8 @@ interface GameState extends Persisted {
   addLiquidity(eth: number): Promise<void>;
   vote(gauge: string, amount: number): Promise<void>;
   launchAgent(name: string, persona: string): Promise<void>;
+  launchSpark(name: string, ticker: string, devBuy: number): Promise<void>;
+  tradeSpark(token: string, side: Side, amount: number): Promise<void>;
   hookSwap(hook: string, from: Token, to: Token, amount: number): Promise<void>;
   supply(venue: Venue, eth: number): Promise<void>;
   borrow(venue: Venue, cash: number): Promise<void>;
@@ -170,6 +173,7 @@ const initial: Persisted = {
   badges: [],
   agents: [],
   deployed: [],
+  sparks: [],
   vaults: { morpho: { collateral: 0, debt: 0 }, aave: { collateral: 0, debt: 0 } },
   txs: [],
   bestRace: null,
@@ -199,9 +203,14 @@ export const useGame = create<GameState>()(
         const before = levelFor(get().xp).level;
         const wallet = { ...get().wallet };
         for (const [k, v] of Object.entries(tokens)) wallet[k as Token] += v ?? 0;
-        set({ xp: get().xp + xp, wallet });
+        set({ xp: Math.min(xpCap, get().xp + xp), wallet });
         const after = levelFor(get().xp).level;
-        if (after > before) get().toast({ tone: "level", title: `Level ${after}`, body: "You're getting more based by the minute." });
+        if (after > before)
+          get().toast({
+            tone: "level",
+            title: after === MAX_LEVEL ? `Level ${MAX_LEVEL} · MAX` : `Level ${after}`,
+            body: after === MAX_LEVEL ? "You've hit the cap. Stay based." : "You're getting more based by the minute.",
+          });
       };
 
       const unlock = () => {
@@ -473,6 +482,24 @@ export const useGame = create<GameState>()(
           award(60);
           get().emit({ type: "action", action: "launch" });
         },
+        launchSpark: async (name, ticker, devBuy) => {
+          if (get().pending || !name.trim() || !ticker.trim() || devBuy < 0 || devBuy > funds().ETH) return;
+          const r = await transact("spark-launch", () => chain.launchSpark(name.trim(), ticker.trim().toUpperCase(), devBuy), `$${ticker.trim().toUpperCase()} kicked off`);
+          if (!r) return;
+          set({ sparks: [r.spark, ...get().sparks] });
+          if (!get().real) set({ wallet: { ...get().wallet, ETH: get().wallet.ETH - devBuy } });
+          award(60);
+          get().emit({ type: "action", action: "spark-launch" });
+        },
+        tradeSpark: async (token, side, amount) => {
+          const spark = get().sparks.find((s) => s.token === token);
+          if (!spark || get().pending || amount <= 0 || amount > (side === "buy" ? funds().ETH : spark.held)) return;
+          const r = await transact(`spark-${side}`, () => chain.tradeSpark(spark, side, amount), side === "buy" ? "Bought on the curve" : "Sold on the curve");
+          if (!r) return;
+          set({ sparks: get().sparks.map((s) => (s.token === token ? r.spark : s)) });
+          if (!get().real) set({ wallet: { ...get().wallet, ETH: get().wallet.ETH + (side === "buy" ? -amount : r.amountOut) } });
+          get().emit({ type: "action", action: `spark-${side}` });
+        },
 
         hookSwap: async (hook, from, to, amount) => {
           if (get().pending || amount <= 0 || amount > get().wallet[from] || from === to) return;
@@ -563,6 +590,7 @@ export const useGame = create<GameState>()(
         badges: s.badges,
         agents: s.agents,
         deployed: s.deployed,
+        sparks: s.sparks,
         vaults: s.vaults,
         txs: s.txs,
         bestRace: s.bestRace,

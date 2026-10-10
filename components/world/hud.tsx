@@ -4,12 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { bankerPrompts, gekkoPrompts, suggestedPrompts } from "./agents";
 import { toggleSound, useSoundOn } from "./audio";
 import { fmt, type Token, tokens } from "./chain";
+import { chatShared, say, useChat } from "./chat";
 import { districts, jumpPads, npcs, palette, RACE, roads, stations } from "./config";
 import { atlasCaptions, layoutCaptions } from "./map-labels";
 import { WorldMap } from "./map";
 import { Panel } from "./panels";
-import { levelFor, questById, quests } from "./quests";
-import { districtName, holdings, live, rewardText, useGame, waypoint } from "./store";
+import { levelFor, MAX_LEVEL, npcLevel, questById, quests } from "./quests";
+import { districtName, holdings, live, rewardText, uiLocked, useGame, waypoint } from "./store";
 import styles from "./world.module.css";
 
 /** Runs `cb` every animation frame; for HUD readouts that follow `live` without re-rendering. */
@@ -45,11 +46,11 @@ export function Hud() {
       <Minimap />
       <Tracker />
       <RaceTimer />
-      <Speedometer />
-      <SoundToggle />
+      <ChatBox />
+      <ActionBar />
+      <XpBar />
       <Prompt />
       <Toasts />
-      <div className={styles.help}>WASD move · Shift boost · Q dash · Space jump ×2 · E interact · J quests · M map · B Base docs · drag to look</div>
       {dialog && <Dialog key={dialog} id={dialog} />}
       {panel && <Panel key={panel} id={panel} />}
       {logOpen && <QuestLog />}
@@ -103,25 +104,11 @@ function Intro() {
 }
 
 function Status() {
-  const xp = useGame((s) => s.xp);
   const wallet = useGame((s) => holdings(s).wallet);
   const lp = useGame((s) => holdings(s).lp);
   const veAero = useGame((s) => s.veAero);
-  const district = useGame((s) => s.district);
-  const { level, progress } = levelFor(xp);
   return (
     <div className={styles.status}>
-      <div className={styles.level}>
-        <div className={styles.badge}>{level}</div>
-        <div>
-          <div className={styles.levelLabel}>
-            Level {level} · {xp} XP
-          </div>
-          <div className={styles.bar}>
-            <i style={{ width: `${progress * 100}%` }} />
-          </div>
-        </div>
-      </div>
       <div className={styles.wallet}>
         {(Object.keys(wallet) as Token[]).map((t) => (
           <span key={t} style={{ color: tokens[t].color }}>
@@ -139,7 +126,6 @@ function Status() {
           </span>
         )}
       </div>
-      {district && <div className={styles.district}>{districtName(district)}</div>}
     </div>
   );
 }
@@ -293,45 +279,100 @@ function Minimap() {
     ctx.restore();
   });
   const open = useGame((s) => s.toggleMap);
+  const zone = useGame((s) => s.district);
   return (
-    <button className={styles.minimap} onClick={open} onMouseDown={(e) => e.preventDefault()} title="World map (M)">
-      <canvas ref={canvas} style={{ width: MAP, height: MAP }} />
-      <span className={styles.north}>N</span>
-    </button>
+    <div className={styles.minimapFrame}>
+      <div className={styles.zone}>{zone ? districtName(zone) : "Base World"}</div>
+      <button className={styles.minimap} onClick={open} onMouseDown={(e) => e.preventDefault()} title="World map (M)">
+        <canvas ref={canvas} style={{ width: MAP, height: MAP }} />
+        <span className={styles.north}>N</span>
+      </button>
+      <Clock />
+      <MapButtons />
+    </div>
   );
 }
 
+function Clock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 15_000);
+    return () => clearInterval(t);
+  }, []);
+  return <div className={styles.clock}>{now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>;
+}
+
+function MapButtons() {
+  const sound = useSoundOn();
+  const toggleLog = useGame((s) => s.toggleLog);
+  const toggleDocs = useGame((s) => s.toggleDocs);
+  const buttons: [string, Glyph, () => void, boolean?][] = [
+    ["Quest log (J)", "quests", toggleLog],
+    ["Base docs (B)", "docs", toggleDocs],
+    [sound ? "Mute" : "Unmute", sound ? "sound" : "muted", toggleSound, !sound],
+  ];
+  return (
+    <div className={styles.mapButtons}>
+      {buttons.map(([title, glyph, onClick, off]) => (
+        <button key={glyph} title={title} onClick={onClick} onMouseDown={(e) => e.preventDefault()} data-off={off || undefined}>
+          <Icon g={glyph} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const TRACKED_MAX = 5;
+
+/** Every active quest, tracked one first; clicking a title steers the waypoint to it. */
 function Tracker() {
+  const status = useGame((s) => s.quests);
   const tracked = useGame((s) => s.tracked);
-  const state = useGame((s) => (s.tracked ? s.quests[s.tracked] : null));
+  const track = useGame((s) => s.track);
+  const toggleLog = useGame((s) => s.toggleLog);
   const dist = useRef<HTMLSpanElement>(null);
   useTicker(() => {
     if (!dist.current) return;
     const wp = waypoint(useGame.getState(), live.pos);
     dist.current.textContent = wp ? `${Math.round(Math.hypot(wp.pos[0] - live.pos.x, wp.pos[2] - live.pos.z))} m` : "";
   });
-  if (!tracked || !state || state.status !== "active") return null;
-  const q = questById[tracked];
+  const active = quests.filter((q) => status[q.id]?.status === "active").sort((a, b) => +(b.id === tracked) - +(a.id === tracked));
+  const offers = quests.filter((q) => status[q.id]?.status === "available").length;
+  if (!active.length && !offers) return null;
   return (
     <div className={styles.tracker}>
-      <div className={styles.kind}>{q.kind}</div>
-      <h3>{q.title}</h3>
-      <ul>
-        {q.objectives.map((o) => {
-          const n = state.progress[o.id]?.length ?? 0;
-          const need = o.count ?? 1;
-          return (
-            <li key={o.id} data-done={n >= need || undefined}>
-              {o.label}
-              {need > 1 && ` ${n}/${need}`}
-            </li>
-          );
-        })}
-      </ul>
-      <small>
-        <span ref={dist} className={styles.trackerDist} />
-        J — quest log
-      </small>
+      <button className={styles.trackerHead} onClick={toggleLog} onMouseDown={(e) => e.preventDefault()} title="Quest log (J)">
+        Quests <kbd>J</kbd>
+      </button>
+      <ol>
+        {active.slice(0, TRACKED_MAX).map((q, i) => (
+          <li key={q.id} data-tracked={q.id === tracked || undefined}>
+            <button onClick={() => track(q.id)} onMouseDown={(e) => e.preventDefault()}>
+              <i>{i + 1}</i>
+              <b>{q.title}</b>
+              {q.id === tracked && <span ref={dist} className={styles.trackerDist} />}
+            </button>
+            <ul>
+              {q.objectives.map((o) => {
+                const n = status[q.id].progress[o.id]?.length ?? 0;
+                const need = o.count ?? 1;
+                return (
+                  <li key={o.id} data-done={n >= need || undefined}>
+                    {o.label}
+                    {need > 1 && ` ${Math.min(n, need)}/${need}`}
+                  </li>
+                );
+              })}
+            </ul>
+          </li>
+        ))}
+      </ol>
+      {active.length > TRACKED_MAX && <small>+{active.length - TRACKED_MAX} more in the quest log</small>}
+      {offers > 0 && (
+        <small>
+          <em>!</em> {offers} {offers === 1 ? "quest" : "quests"} waiting for you
+        </small>
+      )}
     </div>
   );
 }
@@ -360,34 +401,173 @@ function RaceTimer() {
   );
 }
 
-function SoundToggle() {
-  const on = useSoundOn();
+type Glyph = "dash" | "jump" | "boost" | "talk" | "quests" | "map" | "docs" | "sound" | "muted";
+
+const GLYPHS: Record<Glyph, string> = {
+  dash: "M4 12h9M4 7h6M4 17h6M13 6l7 6-7 6",
+  jump: "M12 20V6M6 11l6-6 6 6M5 21h14",
+  boost: "M13 3 5 14h6l-1 7 8-11h-6z",
+  talk: "M4 5h16v11H9l-5 4z",
+  quests: "M12 3v12M12 19v1",
+  map: "M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14",
+  docs: "M5 4h10l4 4v12H5zM14 4v5h5M8 13h8M8 17h6",
+  sound: "M4 9h4l5-4v14l-5-4H4zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11",
+  muted: "M4 9h4l5-4v14l-5-4H4zM17 9l5 6M22 9l-5 6",
+};
+
+function Icon({ g }: { g: Glyph }) {
   return (
-    // No focus on click, so Space keeps jumping instead of re-pressing the button.
-    <button className={styles.sound} onClick={toggleSound} onMouseDown={(e) => e.preventDefault()} data-on={on ? "1" : ""} title="Sound">
-      {on ? "♪ Sound on" : "♪ Muted"}
-    </button>
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={GLYPHS[g]} />
+    </svg>
   );
 }
 
-function Speedometer() {
+/** Abilities on the left, windows on the right; dash shows its recharge as a cooldown sweep. */
+function ActionBar() {
+  const xp = useGame((s) => s.xp);
+  const near = useGame((s) => !!s.nearby);
+  const toggleLog = useGame((s) => s.toggleLog);
+  const toggleMap = useGame((s) => s.toggleMap);
+  const toggleDocs = useGame((s) => s.toggleDocs);
+  const interact = useGame((s) => s.interact);
   const speed = useRef<HTMLSpanElement>(null);
-  const dash = useRef<HTMLElement>(null);
-  const root = useRef<HTMLDivElement>(null);
+  const energy = useRef<HTMLElement>(null);
+  const cooldown = useRef<HTMLElement>(null);
+  const boost = useRef<HTMLButtonElement>(null);
   useTicker(() => {
-    if (!speed.current || !dash.current || !root.current) return;
-    speed.current.textContent = String(Math.round(live.speed * 3.6));
-    dash.current.style.width = `${live.dashCharge * 100}%`;
-    root.current.dataset.boost = live.boosting ? "1" : "";
+    if (!speed.current || !energy.current || !cooldown.current || !boost.current) return;
+    speed.current.textContent = `${Math.round(live.speed * 3.6)} km/h`;
+    energy.current.style.width = `${live.dashCharge * 100}%`;
+    cooldown.current.style.height = `${(1 - live.dashCharge) * 100}%`;
+    boost.current.dataset.on = live.boosting ? "1" : "";
   });
+  const { level } = levelFor(xp);
+  const slots: { key: string; label: string; g: Glyph; act?: () => void; lit?: boolean }[] = [
+    { key: "Q", label: "Dash", g: "dash" },
+    { key: "Spc", label: "Jump", g: "jump" },
+    { key: "Shift", label: "Boost", g: "boost" },
+    { key: "E", label: "Interact", g: "talk", act: interact, lit: near },
+    { key: "J", label: "Quest log", g: "quests", act: toggleLog },
+    { key: "M", label: "World map", g: "map", act: toggleMap },
+    { key: "B", label: "Base docs", g: "docs", act: toggleDocs },
+  ];
   return (
-    <div ref={root} className={styles.speed}>
-      <span ref={speed}>0</span>
-      <small>km/h</small>
-      <div className={styles.dash}>
-        <i ref={dash} />
+    <div className={styles.actionBar}>
+      <div className={styles.unit}>
+        <div className={styles.portrait}>{level}</div>
+        <div>
+          <div className={styles.unitName}>
+            <b>
+              Level {level}
+              {level >= MAX_LEVEL ? " · MAX" : ""} builder
+            </b>
+            <span ref={speed} />
+          </div>
+          <div className={styles.energy}>
+            <i ref={energy} />
+            <span>Dash</span>
+          </div>
+        </div>
       </div>
-      <small>Dash</small>
+      <div className={styles.slots}>
+        {slots.map((s, i) => (
+          <button
+            key={s.key}
+            ref={s.g === "boost" ? boost : undefined}
+            className={styles.slot}
+            title={`${s.label} (${s.key})`}
+            onClick={s.act}
+            onMouseDown={(e) => e.preventDefault()}
+            data-lit={s.lit || undefined}
+            data-gap={i === 4 || undefined}
+          >
+            <Icon g={s.g} />
+            {s.g === "dash" && <i ref={cooldown} className={styles.cooldown} />}
+            <kbd>{s.key}</kbd>
+            <small>{s.label}</small>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function XpBar() {
+  const xp = useGame((s) => s.xp);
+  const { level, progress, next, maxed } = levelFor(xp);
+  return (
+    <div className={styles.xp} title={maxed ? `Level ${MAX_LEVEL} · MAX` : `${next - xp} XP to level ${level + 1}`}>
+      <i style={{ width: `${progress * 100}%` }} />
+      <span>{maxed ? `Level ${MAX_LEVEL} · MAX` : `Level ${level} · ${xp} / ${next} XP`}</span>
+    </div>
+  );
+}
+
+const CHAT_TABS = ["All", "Chat", "System"] as const;
+
+/** Enter (or /) to talk; system tab mirrors quest and wallet events. */
+function ChatBox() {
+  const lines = useChat();
+  const [tab, setTab] = useState<(typeof CHAT_TABS)[number]>("All");
+  const [text, setText] = useState("");
+  const [typing, setTyping] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const log = useRef<HTMLDivElement>(null);
+  const shown = tab === "All" ? lines : lines.filter((l) => (l.kind === "say") === (tab === "Chat"));
+  useEffect(() => {
+    log.current?.scrollTo({ top: log.current.scrollHeight });
+  }, [shown, typing]);
+  useEffect(() => {
+    const open = (e: KeyboardEvent) => {
+      if (e.code !== "Enter" && e.code !== "Slash") return;
+      const t = e.target as HTMLElement | null;
+      if (t?.tagName === "INPUT" || t?.tagName === "TEXTAREA" || uiLocked(useGame.getState())) return;
+      e.preventDefault();
+      input.current?.focus();
+    };
+    window.addEventListener("keydown", open);
+    return () => window.removeEventListener("keydown", open);
+  }, []);
+  return (
+    <div className={styles.chatBox} data-typing={typing || undefined}>
+      <nav>
+        {CHAT_TABS.map((t) => (
+          <button key={t} data-active={tab === t || undefined} onClick={() => setTab(t)} onMouseDown={(e) => e.preventDefault()}>
+            {t}
+          </button>
+        ))}
+      </nav>
+      <div ref={log} className={styles.chatLog}>
+        {shown.map((l) => (
+          <p key={l.id} data-kind={l.kind} data-tone={l.tone}>
+            {l.kind === "say" ? (
+              <>
+                <span>[{l.channel ?? "World"}]</span> <b data-self={l.self || undefined}>{l.from}</b>: {l.text}
+              </>
+            ) : (
+              l.text
+            )}
+          </p>
+        ))}
+      </div>
+      <input
+        ref={input}
+        className={styles.chatInput}
+        value={text}
+        maxLength={200}
+        placeholder={typing ? (chatShared() ? "Say to everyone in Base World…" : "Offline — only you can hear this") : "Press Enter to chat"}
+        onChange={(e) => setText(e.target.value)}
+        onFocus={() => setTyping(true)}
+        onBlur={() => setTyping(false)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (!text.trim() || say(text))) {
+            setText("");
+            e.currentTarget.blur();
+          }
+          if (e.key === "Escape") e.currentTarget.blur();
+        }}
+      />
     </div>
   );
 }
@@ -398,10 +578,9 @@ function Prompt() {
   if (!nearby || busy) return null;
   const npc = npcs.find((n) => n.id === nearby);
   const station = stations.find((s) => s.id === nearby);
-  const label = npc ? `Talk to ${npc.name}` : `Use ${station?.label}`;
   return (
     <div className={styles.prompt}>
-      <kbd>E</kbd> {label}
+      <kbd>E</kbd> {npc ? "Talk to" : "Use"} <b data-kind={npc?.kind ?? "station"}>{npc?.name ?? station?.label}</b>
     </div>
   );
 }
@@ -438,6 +617,7 @@ function Dialog({ id }: { id: string }) {
   if (offer) lines.push(offer.offer);
   else if (active) lines.push(active.hint);
   if (!lines.length && npc.kind === "human") lines.push(greeting);
+  const lvl = npcLevel(npc);
 
   return (
     <div className={styles.modal} data-side={npc.kind === "agent" ? "chat" : undefined}>
@@ -446,7 +626,10 @@ function Dialog({ id }: { id: string }) {
           {npc.photo && <img className={styles.avatar} src={npc.photo} alt={npc.name} />}
           <div>
             <h2 style={{ color: npc.color }}>{npc.name}</h2>
-            <small>{npc.title}</small>
+            <small>
+              Level {lvl}
+              {lvl >= MAX_LEVEL ? " · MAX" : ""} · {npc.title}
+            </small>
             <div className={styles.socials}>
               {npc.twitter && (
                 <a href={`https://x.com/${npc.twitter}`} target="_blank" rel="noreferrer">

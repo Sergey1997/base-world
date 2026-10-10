@@ -1,12 +1,13 @@
 "use client";
 
-import { Billboard, Text } from "@react-three/drei";
+import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { type Group, MathUtils } from "three";
-import { FONT } from "@/components/world/districts";
+import { bubbles, connectChat, post } from "@/components/world/chat";
 import { live } from "@/components/world/store";
+import styles from "@/components/world/world.module.css";
 
 export interface Peer {
   id: string;
@@ -24,6 +25,8 @@ interface Pose {
 
 const SEND_MS = 150;
 const EMPTY: Peer[] = [];
+const LABEL_RANGE = 60;
+const BUBBLE_MS = 7000;
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -68,11 +71,24 @@ export function useMultiplayer(me: Peer) {
             .filter(Boolean),
         );
       })
-      .on("presence", { event: "leave" }, ({ key }) => poses.delete(key))
+      .on("presence", { event: "join" }, ({ key, newPresences }) => {
+        if (key !== me.id && newPresences[0]) post({ kind: "system", tone: "info", text: `${newPresences[0].name} joined Base World.` });
+      })
+      .on("presence", { event: "leave" }, ({ key, leftPresences }) => {
+        poses.delete(key);
+        if (key !== me.id && leftPresences[0]) post({ kind: "system", tone: "info", text: `${leftPresences[0].name} left.` });
+      })
       .on("broadcast", { event: "pose" }, ({ payload }) => poses.set(payload.id, payload))
+      .on("broadcast", { event: "chat" }, ({ payload }) => {
+        const text = String(payload.text ?? "").slice(0, 200);
+        if (!text) return;
+        post({ kind: "say", from: String(payload.name).slice(0, 32), channel: "World", text });
+        bubbles.set(payload.id, { text, at: performance.now() });
+      })
       .subscribe((status) => {
         if (status === "SUBSCRIBED") void channel.track(me);
       });
+    const unchat = connectChat(me.name, (text) => void channel.send({ type: "broadcast", event: "chat", payload: { id: me.id, name: me.name, text } }));
 
     let last = "";
     let quietSince = 0;
@@ -89,6 +105,7 @@ export function useMultiplayer(me: Peer) {
     }, SEND_MS);
 
     return () => {
+      unchat();
       clearInterval(timer);
       void supabase().removeChannel(channel);
       setPeers(EMPTY);
@@ -106,11 +123,28 @@ function Remote({ peer }: { peer: Peer }) {
   const root = useRef<Group>(null);
   const body = useRef<Group>(null);
   const seen = useRef(false);
+  const label = useRef<HTMLDivElement>(null);
+  const bubble = useRef<HTMLParagraphElement>(null);
+  const labeled = useRef(false);
   useFrame((_, dt) => {
     const pose = poses.get(peer.id);
     const g = root.current;
     if (!pose || !g || !body.current) return;
     g.visible = true;
+    if (label.current) {
+      const d = g.position.distanceTo(live.pos);
+      const next = labeled.current ? d < LABEL_RANGE + 12 : d < LABEL_RANGE;
+      if (next !== labeled.current) {
+        labeled.current = next;
+        label.current.style.visibility = next ? "visible" : "hidden";
+        label.current.style.opacity = next ? "1" : "0";
+      }
+    }
+    if (bubble.current) {
+      const said = bubbles.get(peer.id);
+      const text = said && performance.now() - said.at < BUBBLE_MS ? said.text : "";
+      if (bubble.current.textContent !== text) bubble.current.textContent = text;
+    }
     if (!seen.current) {
       g.position.set(pose.x, pose.y, pose.z);
       seen.current = true;
@@ -139,11 +173,13 @@ function Remote({ peer }: { peer: Peer }) {
           <meshStandardMaterial color="#0b1640" emissive={peer.color} emissiveIntensity={1.4} />
         </mesh>
       </group>
-      <Billboard position={[0, 1.7, 0]}>
-        <Text font={FONT} fontSize={0.42} color="#ffffff" outlineWidth={0.03} outlineColor="#020616" anchorY="bottom">
-          {peer.name}
-        </Text>
-      </Billboard>
+      <Html ref={label} position={[0, 1.6, 0]} center zIndexRange={[10, 0]} pointerEvents="none" style={{ visibility: "hidden", opacity: 0 }}>
+        <div className={styles.nameplate} data-kind="player">
+          <p ref={bubble} className={styles.bubble} />
+          <b>{peer.name}</b>
+          <span>&lt;Builder&gt;</span>
+        </div>
+      </Html>
     </group>
   );
 }

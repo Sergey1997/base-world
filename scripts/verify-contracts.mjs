@@ -14,6 +14,8 @@ import {
   DECIMALS,
   ERC20,
   erc20Abi,
+  KICKOFF,
+  kickoffFactoryAbi,
   MORPHO,
   morphoAbi,
 } from "../components/world/contracts.ts";
@@ -113,6 +115,16 @@ for (const [label, address, underlying] of [["aBasWETH", AAVE.aWETH, ERC20.WETH]
     return "underlying + pool match";
   });
 }
+
+await check(`Kickoff Factory ${KICKOFF.factory}`, async () => {
+  await hasCode(KICKOFF.factory);
+  const read = (functionName) => client.readContract({ address: KICKOFF.factory, abi: kickoffFactoryAbi, functionName });
+  const [deployer, locker, router, weth, launched] = await Promise.all(["tokenDeployer", "lpLocker", "router", "weth", "allTokensLength"].map(read));
+  assert(same(deployer, KICKOFF.tokenDeployer), `tokenDeployer is ${deployer}`);
+  assert(same(locker, KICKOFF.lpLocker), `lpLocker is ${locker}`);
+  assert(same(router, AERODROME.router) && same(weth, ERC20.WETH), "router/weth differ");
+  return `${launched} Sparks launched, migrates via Aerodrome`;
+});
 
 console.log(failed ? `\n${failed} check(s) failed` : "\nAll contracts verified on Base mainnet.");
 process.exit(failed ? 1 : 0);

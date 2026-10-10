@@ -96,20 +96,7 @@ function Plaza() {
         <cylinderGeometry args={[2.6, 3.2, 4, 32]} />
         <meshStandardMaterial color="#13235a" metalness={0.6} roughness={0.3} />
       </mesh>
-      <Spin speed={0.35} position={[0, 12, 0]}>
-        <mesh castShadow>
-          <torusGeometry args={[7, 0.55, 20, 96]} />
-          <meshStandardMaterial color={palette.base} emissive={palette.base} emissiveIntensity={3} toneMapped={false} />
-        </mesh>
-        <mesh rotation-y={Math.PI / 2}>
-          <torusGeometry args={[5.2, 0.25, 16, 80]} />
-          <meshBasicMaterial color={glow(palette.cyan, 2)} toneMapped={false} />
-        </mesh>
-      </Spin>
-      <mesh position={[0, 12, 0]}>
-        <sphereGeometry args={[2.4, 32, 32]} />
-        <meshBasicMaterial color={glow("#5b8cff", 3)} toneMapped={false} />
-      </mesh>
+      <Beacon position={[0, 12, 0]} />
       <pointLight position={[0, 12, 0]} color={palette.baseBright} intensity={140} distance={50} />
       <Sparkles count={60} scale={[26, 22, 26]} position={[0, 11, 0]} size={7} speed={0.5} color={palette.cyan} />
       {posts.map((a) => (
@@ -125,6 +112,72 @@ function Plaza() {
         </group>
       ))}
       <Sign position={[0, 21, 0]} text="BASE WORLD" sub="Base Plaza · gm" color={palette.baseBright} size={5} logo="/world/brands/base.png" />
+    </group>
+  );
+}
+
+const ORB_VERT = `varying vec3 vN; varying vec3 vV; varying float vY;
+void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); vY = normal.y; gl_Position = projectionMatrix * mv; }`;
+
+/** The loader's orb: lit from the upper left in view space, so it reads as the same glossy sphere from any angle. */
+const ORB_FRAG = `varying vec3 vN; varying vec3 vV; varying float vY;
+void main(){
+  vec3 n = normalize(vN);
+  vec3 L = normalize(vec3(-0.45, 0.55, 0.75));
+  float diff = max(dot(n, L), 0.0);
+  float rim = pow(1.0 - max(dot(n, vV), 0.0), 2.6);
+  float spec = pow(max(dot(reflect(-L, n), vV), 0.0), 28.0);
+  float bands = 0.035 * sin(vY * 18.0);
+  vec3 col = vec3(0.0, 0.3, 1.0) * (0.28 + 0.9 * diff + bands) + vec3(0.35, 0.75, 1.0) * rim * 1.6 + spec * 1.4;
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+const HALO_FRAG = `varying vec2 vUv;
+void main(){ float d = length(vUv - 0.5) * 2.0; gl_FragColor = vec4(vec3(0.08, 0.35, 1.0) * exp(-d * 4.0) * (1.0 - d), 1.0); }`;
+
+/** The loading scene's centerpiece in 3D: a glossy Base orb inside a tilted ring of drifting lights. */
+function Beacon({ position }: { position: Vec3 }) {
+  const dots = useRef<InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const o = new Object3D();
+    for (let i = 0; i < 36; i++) {
+      const a = (i / 36) * Math.PI * 2;
+      o.position.set(Math.cos(a) * 7, 0, Math.sin(a) * 7);
+      o.updateMatrix();
+      dots.current!.setMatrixAt(i, o.matrix);
+    }
+    dots.current!.instanceMatrix.needsUpdate = true;
+  }, []);
+  return (
+    <group position={position}>
+      <Billboard>
+        <mesh>
+          <planeGeometry args={[22, 22]} />
+          <shaderMaterial
+            vertexShader="varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }"
+            fragmentShader={HALO_FRAG}
+            transparent
+            blending={AdditiveBlending}
+            depthWrite={false}
+          />
+        </mesh>
+      </Billboard>
+      <mesh castShadow>
+        <sphereGeometry args={[3, 48, 32]} />
+        <shaderMaterial vertexShader={ORB_VERT} fragmentShader={ORB_FRAG} />
+      </mesh>
+      <group rotation={[0.2, 0, -0.22]}>
+        <Spin speed={0.12}>
+          <mesh rotation-x={Math.PI / 2}>
+            <torusGeometry args={[7, 0.05, 8, 128]} />
+            <meshBasicMaterial color={glow("#3f8cff", 1.4)} transparent opacity={0.55} toneMapped={false} />
+          </mesh>
+          <instancedMesh ref={dots} args={[undefined, undefined, 36]}>
+            <sphereGeometry args={[0.16, 10, 8]} />
+            <meshBasicMaterial color={glow("#b3e5ff", 2.4)} toneMapped={false} />
+          </instancedMesh>
+        </Spin>
+      </group>
     </group>
   );
 }

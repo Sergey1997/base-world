@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { personas } from "./agents";
-import { fmt, hooks, type Token, tokens, type Venue, venues } from "./chain";
+import { fmt, hooks, type Side, type Token, tokens, type Venue, venues } from "./chain";
 import { useShallow } from "zustand/react/shallow";
 import type { PanelId } from "./config";
 import { docById, docs } from "./docs";
@@ -17,7 +17,7 @@ const GROUPS: PanelId[][] = [
   ["flash", "aave"],
 ];
 /** Panels that spend the connected wallet in online mode; the rest stay simulated. */
-const REAL: PanelId[] = ["swap", "pool", "lend", "aave"];
+const REAL: PanelId[] = ["swap", "pool", "lend", "aave", "kickoff"];
 
 const logos: Record<PanelId, string> = {
   swap: "/world/brands/aerodrome.png",
@@ -28,6 +28,7 @@ const logos: Record<PanelId, string> = {
   hooks: "/world/brands/uniswap.png",
   flash: "/world/brands/aave.png",
   aave: "/world/brands/aave.png",
+  kickoff: "/world/brands/kickoff.png",
   docs: "/world/brands/base.png",
 };
 
@@ -40,6 +41,7 @@ const titles: Record<PanelId, [string, string]> = {
   hooks: ["Uniswap Hook", "Uniswap · swaps with custom rules"],
   flash: ["Aave Flash Loan", "Aave · one block, no collateral"],
   aave: [venues.aave.name, "Aave V3 · supply ETH, borrow USDC"],
+  kickoff: ["Kickoff Launchpad", "Kickoff · launch a Spark, trade the curve"],
   docs: ["Base Docs", "The short version of docs.base.org"],
 };
 
@@ -81,6 +83,7 @@ export function Panel({ id }: { id: PanelId }) {
       {tab === "hooks" && <Hooks />}
       {tab === "flash" && <Flash />}
       {tab === "aave" && <Lend venue="aave" />}
+      {tab === "kickoff" && <Kickoff />}
       {tab === "docs" && <Docs />}
     </div>
   );
@@ -331,6 +334,98 @@ function Launch() {
         )}
       </dl>
       <Submit label={virt < LAUNCH_COST ? "Not enough VIRTUAL" : "Launch agent"} disabled={virt < LAUNCH_COST || !name.trim()} onClick={() => (launch(name, persona), setName(""))} />
+    </div>
+  );
+}
+
+function Kickoff() {
+  const eth = useGame((s) => holdings(s).wallet.ETH);
+  const real = useGame((s) => !!s.real);
+  const sparks = useGame((s) => s.sparks);
+  const launch = useGame((s) => s.launchSpark);
+  const trade = useGame((s) => s.tradeSpark);
+  const [mode, setMode] = useState<"launch" | Side>(sparks.length ? "buy" : "launch");
+  const [name, setName] = useState("");
+  const [ticker, setTicker] = useState("");
+  const [picked, setPicked] = useState(sparks[0]?.token ?? "");
+  const [amount, setAmount] = useState(real ? "0.001" : "0.05");
+  const [quote, setQuote] = useState(0);
+  const spark = sparks.find((s) => s.token === picked) ?? sparks[0];
+  const n = +amount || 0;
+  const symbol = (ticker || name).replace(/[^a-z0-9]/gi, "").slice(0, ticker ? 10 : 6).toUpperCase();
+
+  useEffect(() => {
+    if (mode === "launch" || !spark || !(n > 0)) return void setQuote(0);
+    let live = true;
+    chain.quoteSpark(spark, mode, n).then((q) => live && setQuote(q), () => live && setQuote(0));
+    return () => {
+      live = false;
+    };
+  }, [mode, spark, n]);
+
+  const pick = (m: typeof mode) => {
+    setMode(m);
+    setAmount(m === "sell" && spark ? String(Math.floor(spark.held / 2)) : real ? "0.001" : "0.05");
+  };
+  const max = mode === "sell" ? (spark?.held ?? 0) : eth;
+  const ok = mode === "launch" ? !!name.trim() && !!symbol && n >= 0 && n <= eth : !!spark && n > 0 && n <= max;
+
+  return (
+    <div className={styles.body}>
+      <p className={styles.note}>Spark tokens start on a bonding curve: every buy pushes the price up. At 10 ETH market cap they graduate to Aerodrome with locked liquidity.</p>
+      <nav className={styles.tabs}>
+        {(["launch", "buy", "sell"] as const).map((m) => (
+          <button key={m} data-active={m === mode || undefined} disabled={m !== "launch" && !sparks.length} onClick={() => pick(m)}>
+            {m}
+          </button>
+        ))}
+      </nav>
+      {mode === "launch" ? (
+        <>
+          <input className={styles.text} value={name} onChange={(e) => setName(e.target.value.slice(0, 24))} placeholder="Token name, e.g. Based Rocket" autoFocus />
+          <input className={styles.text} value={ticker} onChange={(e) => setTicker(e.target.value.slice(0, 10))} placeholder={`Ticker${symbol ? ` · $${symbol}` : ", e.g. ROCKET"}`} />
+          <Amount value={amount} onChange={setAmount} token="ETH" max={eth} />
+          <dl className={styles.facts}>
+            <dt>Dev buy</dt>
+            <dd>{n > 0 ? `${fmt(n)} ETH in the launch tx` : "none — launch only costs gas"}</dd>
+            <dt>Supply</dt>
+            <dd>1T · trade fees reflect to holders and pay the creator</dd>
+          </dl>
+        </>
+      ) : (
+        <>
+          <select className={styles.select} value={spark?.token} onChange={(e) => setPicked(e.target.value)}>
+            {sparks.map((s) => (
+              <option key={s.token} value={s.token}>
+                ${s.ticker} · {s.name}
+              </option>
+            ))}
+          </select>
+          <Amount value={amount} onChange={setAmount} token={mode === "buy" ? "ETH" : `$${spark?.ticker}`} max={max} />
+          <dl className={styles.facts}>
+            <dt>You receive</dt>
+            <dd>{mode === "buy" ? `~${fmt(quote)} $${spark?.ticker}` : `~${fmt(quote)} ETH`}</dd>
+            <dt>You hold</dt>
+            <dd>
+              {fmt(spark?.held ?? 0)} ${spark?.ticker}
+            </dd>
+            <dt>Curve</dt>
+            <dd>{fmt(spark?.raised ?? 0)} ETH raised</dd>
+          </dl>
+        </>
+      )}
+      <Submit
+        label={mode === "launch" ? (n > eth ? "Not enough ETH" : symbol ? `Kick off $${symbol}` : "Name your token") : n > max ? `Not enough ${mode === "buy" ? "ETH" : `$${spark?.ticker}`}` : mode === "buy" ? "Buy on the curve" : "Sell to the curve"}
+        disabled={!ok}
+        onClick={() => {
+          if (mode === "launch") {
+            launch(name, symbol, n).then(() => {
+              const fresh = useGame.getState().sparks[0];
+              if (fresh?.name === name.trim()) (setPicked(fresh.token), setName(""), setTicker(""), setMode("buy"));
+            });
+          } else if (spark) trade(spark.token, mode, n);
+        }}
+      />
     </div>
   );
 }

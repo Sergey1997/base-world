@@ -47,6 +47,29 @@ export interface SwapQuote {
   priceImpact: number;
 }
 
+/** A Kickoff token the player launched; `raised` is ETH in its bonding curve. */
+export interface Spark {
+  name: string;
+  ticker: string;
+  token: string;
+  curve: string;
+  held: number;
+  raised: number;
+}
+
+export type Side = "buy" | "sell";
+
+/** Kickoff's live curve: 1T supply, priced from a 0.5 ETH virtual reserve, ~4% kept by fees on each trade. */
+const SPARK_SUPPLY = 1e12;
+const SPARK_SEED_ETH = 0.5;
+const SPARK_FEE = 0.04;
+
+function sparkOut(raised: number, side: Side, amount: number) {
+  const eth = SPARK_SEED_ETH + raised;
+  const k = SPARK_SEED_ETH * SPARK_SUPPLY;
+  return side === "buy" ? (k / eth - k / (eth + amount)) * (1 - SPARK_FEE) : Math.min(raised, eth - k / (k / eth + amount * (1 - SPARK_FEE)));
+}
+
 /**
  * Everything the game asks of "the chain". The mock below settles instantly-ish
  * against local state; a real adapter (wagmi/viem on Base) can implement the
@@ -60,6 +83,10 @@ export interface ChainAdapter {
   vote(gauge: string, veAmount: number): Promise<TxReceipt>;
   launchAgent(name: string, persona: string): Promise<TxReceipt & { ticker: string }>;
   launchToken(name: string): Promise<TxReceipt & { ticker: string; supply: number }>;
+  /** Kickoff: deploy a Spark token, optionally buying `devBuy` ETH of it in the same transaction. */
+  launchSpark(name: string, ticker: string, devBuy: number): Promise<TxReceipt & { spark: Spark }>;
+  quoteSpark(spark: Spark, side: Side, amount: number): Promise<number>;
+  tradeSpark(spark: Spark, side: Side, amount: number): Promise<TxReceipt & { spark: Spark; amountOut: number }>;
   swapWithHook(hook: string, from: Token, to: Token, amountIn: number): Promise<TxReceipt & { amountOut: number }>;
   supply(venue: Venue, eth: number): Promise<TxReceipt>;
   borrow(venue: Venue, cash: number): Promise<TxReceipt>;
@@ -107,6 +134,23 @@ export const mockChain: ChainAdapter = {
     const ticker = name.replace(/[^a-z0-9]/gi, "").slice(0, 6).toUpperCase() || "TOKEN";
     const supply = 1_000_000_000;
     return settle({ hash: fakeHash(), at: Date.now(), ticker, supply, summary: `Deployed $${ticker} (${fmt(supply)} supply)` }, 900);
+  },
+  launchSpark(name, ticker, devBuy) {
+    const held = devBuy > 0 ? sparkOut(0, "buy", devBuy) : 0;
+    const spark = { name, ticker, token: fakeHash().slice(0, 42), curve: fakeHash().slice(0, 42), held, raised: devBuy };
+    return settle({ hash: fakeHash(), at: Date.now(), spark, summary: `Kicked off $${ticker}${devBuy > 0 ? ` with a ${fmt(devBuy)} ETH dev buy` : ""}` }, 900);
+  },
+  async quoteSpark(spark, side, amount) {
+    return sparkOut(spark.raised, side, amount);
+  },
+  tradeSpark(spark, side, amount) {
+    const amountOut = sparkOut(spark.raised, side, amount);
+    const next =
+      side === "buy"
+        ? { ...spark, held: spark.held + amountOut, raised: spark.raised + amount }
+        : { ...spark, held: Math.max(0, spark.held - amount), raised: Math.max(0, spark.raised - amountOut) };
+    const summary = side === "buy" ? `Bought ${fmt(amountOut)} $${spark.ticker} for ${fmt(amount)} ETH` : `Sold ${fmt(amount)} $${spark.ticker} for ${fmt(amountOut)} ETH`;
+    return settle({ hash: fakeHash(), at: Date.now(), spark: next, amountOut, summary: `${summary} on the Kickoff curve` });
   },
   swapWithHook(hook, from, to, amountIn) {
     const fee = hooks.find((h) => h.id === hook)?.fee ?? FEE;

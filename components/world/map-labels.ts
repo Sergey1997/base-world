@@ -32,11 +32,12 @@ export const SHORT_STATION: Record<string, string> = {
   "station-lend": "Vault",
   "station-hooks": "Hook",
   "station-flash": "Flash",
+  "station-kickoff": "Launch",
 };
 
 export const shortName = (name: string) => {
   const parts = name.split(/\s+/);
-  return parts[0] === "Captain" || parts[0] === "Curator" ? (parts[1] ?? name) : parts[0];
+  return parts[0] === "Captain" || parts[0] === "Curator" || parts[0] === "Coach" ? (parts[1] ?? name) : parts[0];
 };
 
 const sizeOf = (item: Caption) => ({
