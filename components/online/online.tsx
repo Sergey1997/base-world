@@ -8,6 +8,7 @@ import { fmt, type Token, tokens } from "@/components/world/chain";
 import { WorldClient } from "@/components/world/client";
 import { MAX_TX_USD, baseChain } from "@/components/world/onchain";
 import { holdings, type Cloud, useGame } from "@/components/world/store";
+import { Avatar } from "./avatar";
 import { connectCloud } from "./cloud";
 import { colorFor, Others, type Peer, useMultiplayer, usePeers } from "./multiplayer";
 import { ENTER, PRIVY_ID, Privy } from "./privy";
@@ -53,6 +54,7 @@ function GoHome() {
 
 interface Live {
   me: Peer;
+  look: { avatar: string | null; seed: number };
   cloud: Cloud;
   flush: () => Promise<void>;
   chain: ReturnType<typeof baseChain>;
@@ -65,21 +67,16 @@ function Session({ wallet }: { wallet: ConnectedWallet }) {
   const [session, setSession] = useState<Live | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deps] = useState(() => ({ wallet, getAccessToken }));
-  const handle = user?.twitter?.username;
   useEffect(() => sessionStorage.removeItem(ENTER), []);
   useEffect(() => {
     const address = deps.wallet.address as Address;
     Promise.all([connectCloud(deps.getAccessToken, address), deps.wallet.getEthereumProvider()])
-      .then(([{ cloud, name, flush }, provider]) => {
+      .then(([{ cloud, name, avatar, seed, flush }, provider]) => {
         const client = createWalletClient({ account: address, chain: base, transport: custom(provider) });
-        setSession({ me: { id, name, color: colorFor(id) }, cloud, flush, chain: baseChain(client, address, RPC) });
+        setSession({ me: { id, name, color: colorFor(id) }, look: { avatar, seed }, cloud, flush, chain: baseChain(client, address, RPC) });
       })
       .catch((e: Error) => setError(e.message));
   }, [deps, id]);
-  useEffect(() => {
-    if (!handle) return;
-    setSession((s) => (s && s.me.name !== `@${handle}` ? { ...s, me: { ...s.me, name: `@${handle}` } } : s));
-  }, [handle]);
   if (error) return <Screen title="Couldn't start online mode" body={error} action={{ label: "Back to menu", onClick: () => location.assign("/") }} />;
   if (!session) return <Screen title="Loading your save…" />;
   return <World session={session} wallet={wallet} />;
@@ -87,20 +84,18 @@ function Session({ wallet }: { wallet: ConnectedWallet }) {
 
 function World({ session, wallet }: { session: Live; wallet: ConnectedWallet }) {
   useMultiplayer(session.me);
-  return <WorldClient options={session} scene={<Others />} overlay={<WalletBar me={session.me} flush={session.flush} wallet={wallet} />} />;
+  return <WorldClient options={session} scene={<Others />} overlay={<WalletBar me={session.me} look={session.look} flush={session.flush} wallet={wallet} />} />;
 }
 
-function WalletBar({ me, flush, wallet }: { me: Peer; flush: () => Promise<void>; wallet: ConnectedWallet }) {
-  const { logout, user, linkTwitter } = usePrivy();
+function WalletBar({ me, look, flush, wallet }: { me: Peer; look: Live["look"]; flush: () => Promise<void>; wallet: ConnectedWallet }) {
   const peers = usePeers();
   const sync = useGame((s) => s.sync);
   const eth = useGame((s) => holdings(s).wallet.ETH);
   const last = useGame((s) => s.txs.find((t) => t.explorer));
   const { fundWallet } = useFundWallet({ onUserExited: () => void sync() });
-  const [open, setOpen] = useState<"send" | null>(null);
+  const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const embedded = wallet.walletClientType === "privy";
-  const twitter = user?.twitter;
 
   useEffect(() => {
     const t = setInterval(() => document.visibilityState === "visible" && void sync(), 20_000);
@@ -109,54 +104,48 @@ function WalletBar({ me, flush, wallet }: { me: Peer; flush: () => Promise<void>
 
   return (
     <div className={styles.bar}>
-      <div className={styles.row}>
-        <i className={styles.dot} style={{ background: me.color }} />
-        <b>{twitter?.username ? `@${twitter.username}` : me.name}</b>
-        {twitter?.username ? (
-          <a className={styles.chip} href={`https://x.com/${twitter.username}`} target="_blank" rel="noreferrer">
-            X
-          </a>
-        ) : (
-          <button className={styles.chip} onClick={() => linkTwitter()} title="Link your X account">
-            Link X
-          </button>
-        )}
-        <button
-          className={styles.chip}
-          title="Copy address"
-          onClick={() => {
-            void navigator.clipboard.writeText(wallet.address);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1200);
-          }}
-        >
-          {copied ? "Copied" : short(wallet.address)}
+      <div className={styles.who}>
+        <Avatar className={styles.face} src={look.avatar} seed={`${me.id}:${look.seed}`} size={34} />
+        <div className={styles.id}>
+          <b>{me.name}</b>
+          <span>
+            <button
+              className={styles.addr}
+              title="Copy address"
+              onClick={() => {
+                void navigator.clipboard.writeText(wallet.address);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1200);
+              }}
+            >
+              {copied ? "Copied" : short(wallet.address)}
+            </button>
+            {" · "}
+            {peers.length + 1} online
+          </span>
+        </div>
+        <button className={styles.icon} title="Account & settings" onClick={() => flush().then(() => location.assign("/account"))}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+          </svg>
         </button>
-        <span className={styles.net}>Base</span>
       </div>
-      <div className={styles.row}>
-        <span className={styles.muted}>
-          {peers.length ? `${peers.length} other ${peers.length === 1 ? "player" : "players"} online` : "You're the only one here — invite a friend"}
-        </span>
-      </div>
-      {embedded && eth < 0.0005 && <p className={styles.hint}>Your wallet needs a little ETH on Base for gas. Add funds to start trading for real.</p>}
+      {embedded && eth < 0.0005 && <p className={styles.hint}>Add a little ETH on Base for gas.</p>}
       <div className={styles.row}>
         {embedded && (
-          <button className={styles.action} onClick={() => fundWallet({ address: wallet.address, options: { chain: base } }).then(() => sync())}>
+          <button className={styles.action} data-primary onClick={() => fundWallet({ address: wallet.address, options: { chain: base } }).then(() => sync())}>
             Add funds
           </button>
         )}
-        <button className={styles.action} data-active={open === "send" || undefined} onClick={() => setOpen(open === "send" ? null : "send")}>
+        <button className={styles.action} data-active={open || undefined} onClick={() => setOpen(!open)}>
           Send
         </button>
-        <button className={styles.action} onClick={() => flush().then(logout).then(() => location.assign("/"))}>
-          Sign out
-        </button>
       </div>
-      {open === "send" && <Send onDone={() => setOpen(null)} />}
+      {open && <Send onDone={() => setOpen(false)} />}
       {last && (
         <a className={styles.last} href={last.explorer} target="_blank" rel="noreferrer">
-          Last tx: {last.summary} ↗
+          {last.summary} ↗
         </a>
       )}
     </div>
@@ -183,7 +172,7 @@ function Send({ onDone }: { onDone: () => void }) {
         void send(to.trim(), token, n).then((ok) => ok && onDone());
       }}
     >
-      <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="Recipient 0x…" spellCheck={false} autoFocus />
+      <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="Recipient 0x…" spellCheck={false} autoFocus data-invalid={(to && !valid) || undefined} />
       <div className={styles.row}>
         <input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))} placeholder="0.0" inputMode="decimal" />
         <select value={token} onChange={(e) => setToken(e.target.value as Token)}>
@@ -193,7 +182,7 @@ function Send({ onDone }: { onDone: () => void }) {
         </select>
       </div>
       <small className={styles.muted}>
-        Balance {fmt(wallet[token])} {token} · max ${MAX_TX_USD} per transaction
+        {fmt(wallet[token])} {token} available · max ${MAX_TX_USD}
       </small>
       <button className={styles.primary} disabled={pending || !valid || n <= 0 || n > wallet[token] || usd > MAX_TX_USD}>
         {pending ? "Confirming…" : !to ? "Enter a recipient" : !valid ? "Invalid address" : usd > MAX_TX_USD ? `Over $${MAX_TX_USD}` : `Send ${token}`}

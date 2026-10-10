@@ -1,4 +1,4 @@
-import { db, handle, HttpError, playerId, profile } from "@/lib/server";
+import { db, handle, HttpError, look, playerId, profile } from "@/lib/server";
 
 const MAX_SAVE = 200_000;
 
@@ -6,12 +6,12 @@ const MAX_SAVE = 200_000;
 export const GET = handle(async (request) => {
   const id = await playerId(request);
   const claimed = new URL(request.url).searchParams.get("wallet")?.toLowerCase();
-  const { name, wallets } = await profile(id);
+  const { name, wallets, photo } = await profile(id);
   const wallet = claimed && wallets.includes(claimed) ? claimed : (wallets[0] ?? null);
   const { data, error } = await db()
-    .from("players").upsert({ id, name, wallet }, { onConflict: "id" }).select("save").single();
+    .from("players").upsert({ id, name, wallet }, { onConflict: "id" }).select("save, nickname, avatar, avatar_seed").single();
   if (error) throw error;
-  return Response.json({ name, wallet, save: data.save });
+  return Response.json({ ...look(data, { name, photo }), wallet, save: data.save });
 });
 
 export const PUT = handle(async (request) => {

@@ -8,3 +8,8 @@ export const OnlineClient = dynamic(() => import("./online"), {
   ssr: false,
   loading: () => <div className={styles.loading}>BASE WORLD</div>,
 });
+
+export const AccountClient = dynamic(() => import("./account"), {
+  ssr: false,
+  loading: () => <div className={styles.loading}>BASE WORLD</div>,
+});

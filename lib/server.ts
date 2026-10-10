@@ -40,9 +40,17 @@ export async function playerId(request: Request) {
   }
 }
 
-type Account = { type: string; address?: string; chain_type?: string; username?: string | null; name?: string | null; email?: string | null };
+type Account = {
+  type: string;
+  address?: string;
+  chain_type?: string;
+  username?: string | null;
+  name?: string | null;
+  email?: string | null;
+  profile_picture_url?: string | null;
+};
 
-/** Display name and Ethereum wallets, straight from Privy rather than from the client. */
+/** Display name, social photo and Ethereum wallets, straight from Privy rather than from the client. */
 export async function profile(id: string) {
   const user = await privy().users()._get(id);
   const accounts = user.linked_accounts as unknown as Account[];
@@ -57,7 +65,23 @@ export async function profile(id: string) {
     find("email")?.address?.split("@")[0] ??
     short ??
     "Builder";
-  return { name: name.slice(0, 24), wallets };
+  const photo = find("twitter_oauth")?.profile_picture_url?.replace("_normal.", "_400x400.") ?? find("farcaster")?.profile_picture_url ?? null;
+  return { name: name.slice(0, 24), wallets, photo };
+}
+
+export interface Look {
+  nickname: string | null;
+  avatar: string | null;
+  avatar_seed: number;
+}
+
+/** The name and picture other players see: what the player chose, else their linked socials, else a generated portrait. */
+export function look(row: Look, derived: { name: string; photo: string | null }) {
+  return {
+    name: row.nickname ?? derived.name,
+    avatar: row.avatar === "auto" ? null : (row.avatar ?? derived.photo),
+    seed: row.avatar_seed,
+  };
 }
 
 export function handle(fn: (request: Request) => Promise<Response>) {

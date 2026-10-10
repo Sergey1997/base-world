@@ -12,7 +12,7 @@ export async function connectCloud(getToken: () => Promise<string | null>, walle
 
   const res = await fetch(`/api/save?wallet=${wallet}`, { headers: headers() });
   if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Couldn't load your save (${res.status})`);
-  const { name, save } = (await res.json()) as { name: string; save: unknown };
+  const { name, avatar, seed, save } = (await res.json()) as { name: string; avatar: string | null; seed: number; save: unknown };
 
   const loaded = save ? JSON.stringify(save) : null;
   let written = loaded ?? "";
@@ -50,5 +50,5 @@ export async function connectCloud(getToken: () => Promise<string | null>, walle
       );
     },
   };
-  return { cloud, name, flush: () => flush() };
+  return { cloud, name, avatar, seed, flush: () => flush() };
 }
