@@ -1,11 +1,10 @@
 "use client";
 
 import { useLogin, usePrivy } from "@privy-io/react-auth";
-import { useEffect } from "react";
-import { ENTER, PRIVY_ID, Privy } from "@/components/online/privy";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
+import { ENTER, PRIVY_ID } from "@/components/online/privy";
 import styles from "./landing.module.css";
-
-const home = () => (typeof window === "undefined" ? undefined : `${window.location.origin}/`);
 
 export function PlayOnline() {
   const card = (
@@ -21,20 +20,19 @@ export function PlayOnline() {
       </a>
     );
   }
-  return (
-    <Privy afterOAuth={home()}>
-      <Go>{card}</Go>
-    </Privy>
-  );
-}
-
-function enter() {
-  sessionStorage.setItem(ENTER, "1");
-  location.assign("/online");
+  return <Go>{card}</Go>;
 }
 
 function Go({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const { ready, authenticated } = usePrivy();
+  const going = useRef(false);
+  const enter = () => {
+    if (going.current) return;
+    going.current = true;
+    sessionStorage.setItem(ENTER, "1");
+    router.push("/online");
+  };
   const { login } = useLogin({
     onComplete: () => {
       if (sessionStorage.getItem(ENTER)) enter();

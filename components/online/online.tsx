@@ -1,6 +1,7 @@
 "use client";
 
 import { type ConnectedWallet, useFundWallet, usePrivy, useWallets } from "@privy-io/react-auth";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { type Address, createWalletClient, custom } from "viem";
 import { base } from "viem/chains";
@@ -11,18 +12,14 @@ import { holdings, type Cloud, useGame } from "@/components/world/store";
 import { Avatar } from "./avatar";
 import { connectCloud } from "./cloud";
 import { colorFor, Others, type Peer, useMultiplayer, usePeers } from "./multiplayer";
-import { ENTER, PRIVY_ID, Privy } from "./privy";
+import { ENTER, PRIVY_ID } from "./privy";
 import styles from "./online.module.css";
 
 const RPC = process.env.NEXT_PUBLIC_BASE_RPC_URL || undefined;
 
 export default function Online() {
   if (!PRIVY_ID) return <Screen title="Online mode isn't configured" body="Set NEXT_PUBLIC_PRIVY_APP_ID in .env.local and restart the dev server." />;
-  return (
-    <Privy>
-      <Gate />
-    </Privy>
-  );
+  return <Gate />;
 }
 
 function Gate() {
@@ -41,14 +38,15 @@ function Gate() {
 }
 
 function GoHome() {
+  const router = useRouter();
   useEffect(() => {
     const wait = sessionStorage.getItem(ENTER) ? 4000 : 1600;
     const t = window.setTimeout(() => {
       sessionStorage.removeItem(ENTER);
-      location.replace("/");
+      router.replace("/");
     }, wait);
     return () => clearTimeout(t);
-  }, []);
+  }, [router]);
   return <Screen title="Connecting…" />;
 }
 
@@ -88,6 +86,7 @@ function World({ session, wallet }: { session: Live; wallet: ConnectedWallet }) 
 }
 
 function WalletBar({ me, look, flush, wallet }: { me: Peer; look: Live["look"]; flush: () => Promise<void>; wallet: ConnectedWallet }) {
+  const router = useRouter();
   const peers = usePeers();
   const sync = useGame((s) => s.sync);
   const eth = useGame((s) => holdings(s).wallet.ETH);
@@ -124,7 +123,7 @@ function WalletBar({ me, look, flush, wallet }: { me: Peer; look: Live["look"]; 
             {peers.length + 1} online
           </span>
         </div>
-        <button className={styles.icon} title="Account & settings" onClick={() => flush().then(() => location.assign("/account"))}>
+        <button className={styles.icon} title="Account & settings" onClick={() => flush().then(() => router.push("/account"))}>
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />

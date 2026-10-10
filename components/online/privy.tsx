@@ -6,7 +6,7 @@ import { base } from "viem/chains";
 export const PRIVY_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
 export const ENTER = "bw-enter";
 
-export function Privy({ children, afterOAuth }: { children: React.ReactNode; afterOAuth?: string }) {
+export function Privy({ children }: { children: React.ReactNode }) {
   return (
     <PrivyProvider
       appId={PRIVY_ID}
@@ -16,7 +16,6 @@ export function Privy({ children, afterOAuth }: { children: React.ReactNode; aft
         embeddedWallets: { ethereum: { createOnLogin: "users-without-wallets" } },
         defaultChain: base,
         supportedChains: [base],
-        customOAuthRedirectUrl: afterOAuth,
       }}
     >
       {children}

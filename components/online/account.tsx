@@ -1,12 +1,13 @@
 "use client";
 
 import { useExportWallet, useFundWallet, usePrivy } from "@privy-io/react-auth";
+import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { base } from "viem/chains";
 import { levelFor } from "@/components/world/quests";
 import styles from "./account.module.css";
 import { Avatar } from "./avatar";
-import { PRIVY_ID, Privy } from "./privy";
+import { PRIVY_ID } from "./privy";
 
 /** Same key `components/world/audio.ts` reads, so the game picks the choice up on its next load. */
 const SOUND = "base-world:sound";
@@ -24,14 +25,11 @@ interface Me {
 
 export default function AccountPage() {
   if (!PRIVY_ID) return <Shell>Online mode isn't configured.</Shell>;
-  return (
-    <Privy>
-      <Account />
-    </Privy>
-  );
+  return <Account />;
 }
 
 function Account() {
+  const router = useRouter();
   const privy = usePrivy();
   const { ready, authenticated, user } = privy;
   const { exportWallet } = useExportWallet();
@@ -55,9 +53,9 @@ function Account() {
 
   const linked = user?.linkedAccounts.length ?? 0;
   useEffect(() => {
-    if (ready && !authenticated) location.replace("/");
+    if (ready && !authenticated) router.replace("/");
     if (ready && authenticated) api().catch((e: Error) => setError(e.message));
-  }, [ready, authenticated, linked, api]);
+  }, [ready, authenticated, linked, api, router]);
 
   const run = (label: string, fn: () => unknown) => async () => {
     setBusy(label);
@@ -238,7 +236,7 @@ function Account() {
 
       <button className={styles.danger} onClick={run("logout", async () => {
         await privy.logout();
-        location.assign("/");
+        router.push("/");
       })}>
         Sign out
       </button>
