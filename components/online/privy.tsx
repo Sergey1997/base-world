@@ -16,6 +16,8 @@ export function Privy({ children }: { children: React.ReactNode }) {
         embeddedWallets: { ethereum: { createOnLogin: "users-without-wallets" } },
         defaultChain: base,
         supportedChains: [base],
+        // After X, land back in the world — not a fresh /account page that tears the session down.
+        customOAuthRedirectUrl: typeof window === "undefined" ? undefined : `${window.location.origin}/online#settings`,
       }}
     >
       {children}

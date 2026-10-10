@@ -25,10 +25,17 @@ interface Me {
 
 export default function AccountPage() {
   if (!PRIVY_ID) return <Shell>Online mode isn't configured.</Shell>;
-  return <Account />;
+  return <AccountSettings />;
 }
 
-function Account() {
+/** Settings form. Pass `onClose` to float it over the live world instead of leaving the session. */
+export function AccountSettings({
+  onClose,
+  onProfile,
+}: {
+  onClose?: () => void;
+  onProfile?: (p: { name: string; avatar: string | null; seed: number }) => void;
+}) {
   const router = useRouter();
   const privy = usePrivy();
   const { ready, authenticated, user } = privy;
@@ -49,7 +56,8 @@ function Account() {
     if (!res.ok) throw new Error(body?.error ?? `Request failed (${res.status})`);
     setMe(body as Me);
     setNick((body as Me).nickname ?? "");
-  }, []);
+    onProfile?.({ name: body.name, avatar: body.avatar, seed: body.seed });
+  }, [onProfile]);
 
   const { linkTwitter, linkGoogle, linkEmail, linkWallet } = useLinkAccount({
     onSuccess: () => {
@@ -68,6 +76,14 @@ function Account() {
     if (ready && !authenticated) router.replace("/");
     if (ready && authenticated) api().catch((e: Error) => setError(e.message));
   }, [ready, authenticated, linked, api, router]);
+  useEffect(() => {
+    if (!onClose) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const run = (label: string, fn: () => unknown) => async () => {
     setBusy(label);
@@ -98,7 +114,7 @@ function Account() {
   const patch = (body: Partial<{ nickname: string | null; avatar: "auto" | null; seed: number }>) =>
     api({ method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
-  if (!ready || !authenticated || !user || !me) return <Shell>{error ?? "Loading your account…"}</Shell>;
+  if (!ready || !authenticated || !user || !me) return <Shell onClose={onClose}>{error ?? "Loading your account…"}</Shell>;
 
   const seed = (n: number) => `${user.id}:${n}`;
   const { level, progress } = levelFor(me.xp);
@@ -109,7 +125,7 @@ function Account() {
   const address = user.wallet?.address;
 
   return (
-    <Shell>
+    <Shell onClose={onClose}>
       <section className={styles.card}>
         <div className={styles.profile}>
           <Avatar className={styles.big} src={me.avatar} seed={seed(me.seed)} size={84} />
@@ -272,17 +288,32 @@ function Account() {
   );
 }
 
-function Shell({ children }: { children: ReactNode }) {
-  return (
-    <main className={styles.page}>
-      <div className={styles.column}>
-        <nav className={styles.nav}>
+function Shell({ children, onClose }: { children: ReactNode; onClose?: () => void }) {
+  const inner = (
+    <div className={styles.column}>
+      <nav className={styles.nav}>
+        {onClose ? (
+          <button type="button" className={styles.back} onClick={onClose}>
+            Close
+          </button>
+        ) : (
           <a href="/online">← Back to world</a>
-          <span>Account</span>
-        </nav>
-        {children}
-      </div>
-    </main>
+        )}
+        <span>Settings</span>
+      </nav>
+      {children}
+    </div>
+  );
+  if (!onClose) return <main className={styles.page}>{inner}</main>;
+  return (
+    <div
+      className={styles.modal}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      {inner}
+    </div>
   );
 }
 
@@ -334,5 +365,7 @@ function why(e: unknown) {
   if (code === "oauth_user_denied") return "Login was cancelled.";
   if (code === "cannot_link_more_of_type") return "Already linked.";
   if (code === "must_be_authenticated") return "Sign in first, then link an account.";
+  if (/request token/i.test(code))
+    return "X refused the OAuth handshake. In Privy → Login methods → X, use the Consumer API Key and Secret (OAuth 1.0a), not the OAuth 2 Client ID. In the X developer app, enable User authentication and set the callback to https://auth.privy.io/api/v1/oauth/callback.";
   return code || "Couldn't start the link. Try again.";
 }

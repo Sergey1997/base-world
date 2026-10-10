@@ -10,6 +10,7 @@ import { WorldClient } from "@/components/world/client";
 import { Loader } from "@/components/world/loader";
 import { MAX_TX_USD, baseChain } from "@/components/world/onchain";
 import { holdings, type Cloud, useGame } from "@/components/world/store";
+import { AccountSettings } from "./account";
 import { Avatar } from "./avatar";
 import { connectCloud } from "./cloud";
 import { colorFor, Others, type Peer, useMultiplayer, usePeers } from "./multiplayer";
@@ -82,12 +83,39 @@ function Session({ wallet }: { wallet: ConnectedWallet }) {
 }
 
 function World({ session, wallet }: { session: Live; wallet: ConnectedWallet }) {
-  useMultiplayer(session.me);
-  return <WorldClient options={session} scene={<Others />} overlay={<WalletBar me={session.me} look={session.look} flush={session.flush} wallet={wallet} />} />;
+  const [settings, setSettings] = useState(false);
+  const [look, setLook] = useState(session.look);
+  const [name, setName] = useState(session.me.name);
+  const me = { ...session.me, name };
+  useMultiplayer(me);
+  useEffect(() => {
+    if (window.location.hash !== "#settings") return;
+    setSettings(true);
+    history.replaceState(null, "", "/online");
+  }, []);
+  return (
+    <WorldClient
+      options={session}
+      scene={<Others />}
+      overlay={
+        <>
+          <WalletBar me={me} look={look} flush={session.flush} wallet={wallet} onSettings={() => setSettings(true)} />
+          {settings && (
+            <AccountSettings
+              onClose={() => setSettings(false)}
+              onProfile={(p) => {
+                setLook({ avatar: p.avatar, seed: p.seed });
+                setName(p.name);
+              }}
+            />
+          )}
+        </>
+      }
+    />
+  );
 }
 
-function WalletBar({ me, look, flush, wallet }: { me: Peer; look: Live["look"]; flush: () => Promise<void>; wallet: ConnectedWallet }) {
-  const router = useRouter();
+function WalletBar({ me, look, flush, wallet, onSettings }: { me: Peer; look: Live["look"]; flush: () => Promise<void>; wallet: ConnectedWallet; onSettings: () => void }) {
   const peers = usePeers();
   const sync = useGame((s) => s.sync);
   const eth = useGame((s) => holdings(s).wallet.ETH);
@@ -124,7 +152,15 @@ function WalletBar({ me, look, flush, wallet }: { me: Peer; look: Live["look"]; 
             {peers.length + 1} online
           </span>
         </div>
-        <button className={styles.icon} title="Account & settings" onClick={() => flush().then(() => router.push("/account"))}>
+        <button
+          className={styles.icon}
+          title="Account & settings"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            void flush();
+            onSettings();
+          }}
+        >
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />

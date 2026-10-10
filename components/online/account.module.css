@@ -6,6 +6,22 @@
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
+.modal {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  padding: 28px 16px 32px;
+  overflow: auto;
+  background: rgba(5, 11, 36, 0.4);
+  color: #dce8ff;
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .page :where(button, input, a) {
   color: inherit;
   font: inherit;
@@ -27,11 +43,18 @@
   font-size: 13px;
 }
 
-.nav a {
+.nav a,
+.back {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
   text-decoration: none;
+  cursor: pointer;
 }
 
-.nav a:hover {
+.nav a:hover,
+.back:hover {
   color: #5ee7ff;
 }
 
