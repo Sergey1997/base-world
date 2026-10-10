@@ -25,11 +25,11 @@ interface Pose {
 const SEND_MS = 150;
 const EMPTY: Peer[] = [];
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
 let client: SupabaseClient | null = null;
-const supabase = () =>
-  (client ??= createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!, {
-    auth: { persistSession: false },
-  }));
+const supabase = () => (client ??= createClient(SUPABASE_URL!, SUPABASE_KEY!, { auth: { persistSession: false } }));
 
 /** Latest pose per peer, written by the socket and read every frame without touching React. */
 const poses = new Map<string, Pose>();
@@ -56,6 +56,7 @@ export const colorFor = (id: string) => {
 /** One shared world: presence says who is here, broadcast carries where they are. */
 export function useMultiplayer(me: Peer) {
   useEffect(() => {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return console.warn("Multiplayer is off: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY aren't set.");
     const channel = supabase().channel("base-world", { config: { broadcast: { self: false }, presence: { key: me.id } } });
     channel
       .on("presence", { event: "sync" }, () => {
