@@ -7,6 +7,7 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import { AdditiveBlending, Color, DoubleSide, type Group, type InstancedMesh, type Mesh, Object3D } from "three";
 import { BrandDisc } from "./brand";
 import { type DistrictDef, districtById, districts, palette, RACE, stations, SUMMIT, type Vec3 } from "./config";
+import { Emblem } from "./emblem";
 import { windowMaterial } from "./environment";
 import { useGame } from "./store";
 
@@ -96,7 +97,7 @@ function Plaza() {
         <cylinderGeometry args={[2.6, 3.2, 4, 32]} />
         <meshStandardMaterial color="#13235a" metalness={0.6} roughness={0.3} />
       </mesh>
-      <Beacon position={[0, 12, 0]} />
+      <Emblem kind="orb" color={palette.baseBright} lift={palette.cyan} position={[0, 12, 0]} />
       <pointLight position={[0, 12, 0]} color={palette.baseBright} intensity={140} distance={50} />
       <Sparkles count={60} scale={[26, 22, 26]} position={[0, 11, 0]} size={7} speed={0.5} color={palette.cyan} />
       {posts.map((a) => (
@@ -112,72 +113,6 @@ function Plaza() {
         </group>
       ))}
       <Sign position={[0, 21, 0]} text="BASE WORLD" sub="Base Plaza · gm" color={palette.baseBright} size={5} logo="/world/brands/base.png" />
-    </group>
-  );
-}
-
-const ORB_VERT = `varying vec3 vN; varying vec3 vV; varying float vY;
-void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); vY = normal.y; gl_Position = projectionMatrix * mv; }`;
-
-/** The loader's orb: lit from the upper left in view space, so it reads as the same glossy sphere from any angle. */
-const ORB_FRAG = `varying vec3 vN; varying vec3 vV; varying float vY;
-void main(){
-  vec3 n = normalize(vN);
-  vec3 L = normalize(vec3(-0.45, 0.55, 0.75));
-  float diff = max(dot(n, L), 0.0);
-  float rim = pow(1.0 - max(dot(n, vV), 0.0), 2.6);
-  float spec = pow(max(dot(reflect(-L, n), vV), 0.0), 28.0);
-  float bands = 0.035 * sin(vY * 18.0);
-  vec3 col = vec3(0.0, 0.3, 1.0) * (0.28 + 0.9 * diff + bands) + vec3(0.35, 0.75, 1.0) * rim * 1.6 + spec * 1.4;
-  gl_FragColor = vec4(col, 1.0);
-}`;
-
-const HALO_FRAG = `varying vec2 vUv;
-void main(){ float d = length(vUv - 0.5) * 2.0; gl_FragColor = vec4(vec3(0.08, 0.35, 1.0) * exp(-d * 4.0) * (1.0 - d), 1.0); }`;
-
-/** The loading scene's centerpiece in 3D: a glossy Base orb inside a tilted ring of drifting lights. */
-function Beacon({ position }: { position: Vec3 }) {
-  const dots = useRef<InstancedMesh>(null);
-  useLayoutEffect(() => {
-    const o = new Object3D();
-    for (let i = 0; i < 36; i++) {
-      const a = (i / 36) * Math.PI * 2;
-      o.position.set(Math.cos(a) * 7, 0, Math.sin(a) * 7);
-      o.updateMatrix();
-      dots.current!.setMatrixAt(i, o.matrix);
-    }
-    dots.current!.instanceMatrix.needsUpdate = true;
-  }, []);
-  return (
-    <group position={position}>
-      <Billboard>
-        <mesh>
-          <planeGeometry args={[22, 22]} />
-          <shaderMaterial
-            vertexShader="varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }"
-            fragmentShader={HALO_FRAG}
-            transparent
-            blending={AdditiveBlending}
-            depthWrite={false}
-          />
-        </mesh>
-      </Billboard>
-      <mesh castShadow>
-        <sphereGeometry args={[3, 48, 32]} />
-        <shaderMaterial vertexShader={ORB_VERT} fragmentShader={ORB_FRAG} />
-      </mesh>
-      <group rotation={[0.2, 0, -0.22]}>
-        <Spin speed={0.12}>
-          <mesh rotation-x={Math.PI / 2}>
-            <torusGeometry args={[7, 0.05, 8, 128]} />
-            <meshBasicMaterial color={glow("#3f8cff", 1.4)} transparent opacity={0.55} toneMapped={false} />
-          </mesh>
-          <instancedMesh ref={dots} args={[undefined, undefined, 36]}>
-            <sphereGeometry args={[0.16, 10, 8]} />
-            <meshBasicMaterial color={glow("#b3e5ff", 2.4)} toneMapped={false} />
-          </instancedMesh>
-        </Spin>
-      </group>
     </group>
   );
 }
@@ -199,10 +134,7 @@ function Summit() {
         <cylinderGeometry args={[1.2, 2.2, 20, 8]} />
         <meshStandardMaterial color="#dce8ff" metalness={0.3} roughness={0.3} />
       </mesh>
-      <mesh position={[0, height + 21, -12]}>
-        <octahedronGeometry args={[2.4]} />
-        <meshBasicMaterial color={glow(palette.cyan, 3)} toneMapped={false} />
-      </mesh>
+      <Emblem kind="crystal" color={palette.cyan} position={[0, height + 21, -12]} />
       <mesh position={[0, height + 120, -12]}>
         <cylinderGeometry args={[1.4, 1.4, 200, 16, 1, true]} />
         <meshBasicMaterial color={glow(palette.cyan, 1)} transparent opacity={0.25} blending={AdditiveBlending} depthWrite={false} side={DoubleSide} />
@@ -334,6 +266,7 @@ function Aerodrome() {
         <boxGeometry args={[124, 0.4, 0.4]} />
         <meshBasicMaterial color={glow(palette.aero, 3)} toneMapped={false} />
       </mesh>
+      <Emblem kind="turbine" color={palette.aero} lift="#fff2e0" position={[235, 22, 8]} />
       <Sign position={[235, 19, 46]} text="AERODROME" sub="The liquidity layer of Base · swap · pool · vote" color={palette.aero} size={6} logo="/world/brands/aerodrome.png" />
 
       {/* epoch board */}
@@ -491,12 +424,7 @@ function Virtuals() {
           <TowerEdges h={t.h} color={t.c} />
         </group>
       ))}
-      <Spin speed={0.5} position={[d.center[0], 24, d.center[1]]}>
-        <mesh>
-          <torusKnotGeometry args={[5, 1.1, 160, 16]} />
-          <meshStandardMaterial color="#1a0b3a" emissive={palette.virtuals} emissiveIntensity={2.2} metalness={0.6} roughness={0.2} />
-        </mesh>
-      </Spin>
+      <Emblem kind="knot" color={palette.virtuals} position={[d.center[0], 24, d.center[1]]} />
       <group position={[pad[0], 0, pad[2]]}>
         <mesh rotation-x={-Math.PI / 2} position-y={0.12}>
           <ringGeometry args={[5, 6.2, 64]} />
@@ -567,26 +495,9 @@ export function ProtocolDistrict({ d }: { d: DistrictDef }) {
           <Motif kind={look.motif} h={s.h} color={look.accent} />
         </group>
       ))}
-      <Spin speed={0.6} position={[cx, 22, cz]}>
-        <mesh>
-          <torusGeometry args={[6, 0.6, 16, 64]} />
-          <meshBasicMaterial color={glow(look.accent, 2.6)} toneMapped={false} />
-        </mesh>
-        <mesh rotation-x={Math.PI / 2}>
-          <torusGeometry args={[4.4, 0.35, 16, 64]} />
-          <meshBasicMaterial color={glow(d.color, 2)} toneMapped={false} />
-        </mesh>
-        {d.logo ? (
-          <BrandDisc src={d.logo} radius={2.6} />
-        ) : (
-          <mesh>
-            <icosahedronGeometry args={[2.4, 0]} />
-            <meshStandardMaterial color="#0b1640" emissive={look.accent} emissiveIntensity={1.4} flatShading />
-          </mesh>
-        )}
-      </Spin>
+      <Emblem kind={look.emblem} color={look.accent} position={[cx, 18, cz]} />
       <Sparkles count={35} scale={[d.radius * 1.6, 22, d.radius * 1.6]} position={[cx, 10, cz]} size={6} speed={0.35} color={look.accent} />
-      <Sign position={[cx, 31, cz]} text={look.sign} sub={look.tagline} color={look.accent} size={4} />
+      <Sign position={[cx, 31, cz]} text={look.sign} sub={look.tagline} color={look.accent} size={4} logo={d.logo} />
     </group>
   );
 }

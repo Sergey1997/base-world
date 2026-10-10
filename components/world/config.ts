@@ -16,6 +16,7 @@ export const SPAWN: Vec3 = [0, 2, 28];
 export const WORLD_HALF = 420;
 
 export type DistrictId = string;
+export type EmblemKind = "orb" | "curve" | "vaults" | "hooks" | "ghost" | "wave" | "knot" | "turbine" | "crystal";
 
 /**
  * Districts are pure data. Hand-built scenes exist for the plaza, summit, Aerodrome and Virtuals;
@@ -32,7 +33,7 @@ export interface DistrictDef {
   /** Road from the plaza edge to the district edge. */
   road?: [number, number, number, number];
   logo?: string;
-  look?: { accent: string; sign: string; tagline: string; towers: number; motif: "vault" | "pylon" | "dome" };
+  look?: { accent: string; sign: string; tagline: string; towers: number; motif: "vault" | "pylon" | "dome"; emblem: EmblemKind };
 }
 
 export const districts: DistrictDef[] = [
@@ -48,7 +49,7 @@ export const districts: DistrictDef[] = [
     color: "#2470ff",
     road: [-35, -25, -158, -105],
     logo: "/world/brands/morpho.png",
-    look: { accent: "#4d8fff", sign: "MORPHO", tagline: "Curated lending vaults", towers: 7, motif: "vault" },
+    look: { accent: "#4d8fff", sign: "MORPHO", tagline: "Curated lending vaults", towers: 7, motif: "vault", emblem: "vaults" },
   },
   {
     id: "bankr",
@@ -58,7 +59,7 @@ export const districts: DistrictDef[] = [
     color: "#3dffb0",
     road: [30, 35, 115, 160],
     logo: "/world/brands/bankr.png",
-    look: { accent: "#3dffb0", sign: "BANKR", tagline: "Trade by talking", towers: 5, motif: "pylon" },
+    look: { accent: "#3dffb0", sign: "BANKR", tagline: "Trade by talking", towers: 5, motif: "pylon", emblem: "wave" },
   },
   {
     id: "uniswap",
@@ -68,7 +69,7 @@ export const districts: DistrictDef[] = [
     color: "#ff007a",
     road: [0, 50, -6, 185],
     logo: "/world/brands/uniswap.png",
-    look: { accent: "#ff4da6", sign: "UNISWAP", tagline: "Swaps with hooks", towers: 6, motif: "dome" },
+    look: { accent: "#ff4da6", sign: "UNISWAP", tagline: "Swaps with hooks", towers: 6, motif: "dome", emblem: "hooks" },
   },
   {
     id: "aave",
@@ -78,7 +79,7 @@ export const districts: DistrictDef[] = [
     color: "#b6509e",
     road: [40, -60, 160, -238],
     logo: "/world/brands/aave.png",
-    look: { accent: "#d478c0", sign: "AAVE", tagline: "Borrow it. Use it. Return it. One block.", towers: 4, motif: "vault" },
+    look: { accent: "#d478c0", sign: "AAVE", tagline: "Borrow it. Use it. Return it. One block.", towers: 4, motif: "vault", emblem: "ghost" },
   },
   {
     id: "kickoff",
@@ -88,7 +89,7 @@ export const districts: DistrictDef[] = [
     color: "#ffe94a",
     road: [-50, 0, -205, -8],
     logo: "/world/brands/kickoff.png",
-    look: { accent: "#ffe94a", sign: "KICKOFF", tagline: "Launch a token. Ride the curve.", towers: 5, motif: "pylon" },
+    look: { accent: "#ffe94a", sign: "KICKOFF", tagline: "Launch a token. Ride the curve.", towers: 5, motif: "pylon", emblem: "curve" },
   },
 ];
 
