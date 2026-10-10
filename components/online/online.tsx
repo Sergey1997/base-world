@@ -7,6 +7,7 @@ import { type Address, createWalletClient, custom } from "viem";
 import { base } from "viem/chains";
 import { fmt, type Token, tokens } from "@/components/world/chain";
 import { WorldClient } from "@/components/world/client";
+import { Loader } from "@/components/world/loader";
 import { MAX_TX_USD, baseChain } from "@/components/world/onchain";
 import { holdings, type Cloud, useGame } from "@/components/world/store";
 import { Avatar } from "./avatar";
@@ -191,6 +192,7 @@ function Send({ onDone }: { onDone: () => void }) {
 }
 
 function Screen({ title, body, action }: { title: string; body?: string; action?: { label: string; onClick: () => void } }) {
+  if (!body && !action) return <Loader label={title} />;
   return (
     <main className={styles.screen}>
       <div className={styles.card}>
