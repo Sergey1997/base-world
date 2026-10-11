@@ -9,7 +9,7 @@ import { districts, jumpPads, npcs, palette, RACE, roads, stations } from "./con
 import { atlasCaptions, layoutCaptions } from "./map-labels";
 import { WorldMap } from "./map";
 import { Panel } from "./panels";
-import { levelFor, MAX_LEVEL, npcLevel, questById, quests } from "./quests";
+import { levelFor, MAX_LEVEL, npcLevel, objectivesMet, questById, quests } from "./quests";
 import { districtName, holdings, live, rewardText, uiLocked, useGame, waypoint } from "./store";
 import styles from "./world.module.css";
 
@@ -105,26 +105,14 @@ function Intro() {
 
 function Status() {
   const wallet = useGame((s) => holdings(s).wallet);
-  const lp = useGame((s) => holdings(s).lp);
-  const veAero = useGame((s) => s.veAero);
   return (
     <div className={styles.status}>
       <div className={styles.wallet}>
-        {(["ETH", "USDC", "AERO", "VIRTUAL"] as Token[]).map((t) => (
+        {(["ETH", "USDC"] as Token[]).map((t) => (
           <span key={t} style={{ color: tokens[t].color }}>
             {fmt(wallet[t])} <small>{t}</small>
           </span>
         ))}
-        {lp > 0 && (
-          <span>
-            {fmt(lp)} <small>LP</small>
-          </span>
-        )}
-        {veAero > 0 && (
-          <span>
-            {fmt(veAero)} <small>veAERO</small>
-          </span>
-        )}
       </div>
     </div>
   );
@@ -184,7 +172,14 @@ function Minimap() {
       ctx.fill();
       ctx.stroke();
     }
-    const givers = new Set(quests.filter((q) => s.quests[q.id]?.status === "available").map((q) => q.giver));
+    const givers = new Set(
+      quests
+        .filter((q) => {
+          const st = s.quests[q.id];
+          return st?.status === "available" || (st?.status === "active" && objectivesMet(q, st.progress));
+        })
+        .map((q) => q.giver),
+    );
     for (const n of npcs) {
       if (n.kind !== "human" && !givers.has(n.id)) continue;
       const [x, y] = to(n.position[0], n.position[2]);
@@ -606,7 +601,7 @@ function Dialog({ id }: { id: string }) {
   const accept = useGame((s) => s.accept);
   const close = useGame((s) => s.close);
   const [justDone] = useState(() =>
-    quests.find((q) => performance.now() - (completedAt[q.id] ?? -1e9) < 1500 && q.objectives.some((o) => o.event === "talk" && o.match === id)),
+    quests.find((q) => q.giver === id && performance.now() - (completedAt[q.id] ?? -1e9) < 1500),
   );
   const [greeting] = useState(() => npc.greeting[Math.floor(Math.random() * npc.greeting.length)]);
   const mine = quests.filter((q) => q.giver === id);

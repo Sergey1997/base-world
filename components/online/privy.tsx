@@ -11,7 +11,7 @@ export function Privy({ children }: { children: React.ReactNode }) {
     <PrivyProvider
       appId={PRIVY_ID}
       config={{
-        appearance: { theme: "#070e2c", accentColor: "#0052ff", logo: "/world/brands/base.png", landingHeader: "Enter Base World", walletChainType: "ethereum-only" },
+        appearance: { theme: "#070e2c", accentColor: "#0052ff", logo: "/icon.png", landingHeader: "Enter Base World", walletChainType: "ethereum-only" },
         loginMethods: ["twitter", "google", "email", "wallet"],
         embeddedWallets: { ethereum: { createOnLogin: "users-without-wallets" } },
         defaultChain: base,

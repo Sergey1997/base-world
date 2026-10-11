@@ -1,0 +1,19 @@
+# Base World
+
+> A stylized 3D open world for the Base ecosystem. Explore protocol districts, complete quests, talk to AI agents, and run DeFi.
+
+Base World is a browser game. Play offline with a local save and simulated transactions, or online in a shared world with Privy login and real Base mainnet actions (swaps, liquidity, lending, transfers), capped per transaction.
+
+## Play
+
+- Home: /
+- Offline: /offline
+- Online: /online
+
+## Districts
+
+Aerodrome, Virtuals, Morpho, Bankr, Uniswap, Aave, Kickoff, and Base Plaza.
+
+## Stack
+
+Next.js, React Three Fiber, Privy, Supabase, Base.

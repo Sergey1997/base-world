@@ -37,7 +37,7 @@ export interface DistrictDef {
 }
 
 export const districts: DistrictDef[] = [
-  { id: "plaza", name: "Base Plaza", center: [0, 0], radius: 50, color: palette.baseBright, logo: "/world/brands/base.png" },
+  { id: "plaza", name: "Base Plaza", center: [0, 0], radius: 50, color: palette.baseBright, logo: "/logo.png" },
   { id: "aerodrome", name: "Aerodrome", center: [235, -45], radius: 125, color: palette.aero, logo: "/world/brands/aerodrome.png", road: [40, 0, 150, 0] },
   { id: "virtuals", name: "Virtuals", center: [-215, 140], radius: 80, color: palette.virtuals, logo: "/world/brands/virtuals.png", road: [-35, 25, -175, 115] },
   { id: "summit", name: "Summit Beacon", center: [0, -235], radius: 30, color: palette.cyan, minY: 10, road: [0, -45, 0, -200] },

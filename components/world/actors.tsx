@@ -7,7 +7,7 @@ import { AdditiveBlending, Color, DoubleSide, type Group, type Mesh, type MeshBa
 import { districts, jumpPads, type NpcDef, npcs, orbs, palette, RACE, type StationDef, stations, type Vec3 } from "./config";
 import { BrandDisc } from "./brand";
 import { FONT } from "./districts";
-import { MAX_LEVEL, npcLevel, type Objective, quests } from "./quests";
+import { MAX_LEVEL, npcLevel, objectivesMet, type Objective, quests } from "./quests";
 import { live, useGame, waypoint } from "./store";
 import styles from "./world.module.css";
 
@@ -51,12 +51,22 @@ function isTarget(o: Objective | null, n: NpcDef) {
 
 function Npcs() {
   const status = useGame((s) => s.quests);
-  const offers = useMemo(() => new Set(quests.filter((q) => status[q.id]?.status === "available").map((q) => q.giver)), [status]);
+  const marks = useMemo(() => {
+    const offer = new Set<string>();
+    const turnIn = new Set<string>();
+    for (const q of quests) {
+      const st = status[q.id];
+      if (!st) continue;
+      if (st.status === "available") offer.add(q.giver);
+      if (st.status === "active" && objectivesMet(q, st.progress)) turnIn.add(q.giver);
+    }
+    return { offer, turnIn };
+  }, [status]);
   const objective = useGame(currentObjective);
   return (
     <>
       {npcs.map((n) => (
-        <Npc key={n.id} n={n} offer={offers.has(n.id)} target={isTarget(objective, n)} />
+        <Npc key={n.id} n={n} mark={marks.turnIn.has(n.id) ? "?" : marks.offer.has(n.id) ? "!" : null} target={isTarget(objective, n)} />
       ))}
     </>
   );
@@ -77,7 +87,7 @@ function useFade(ref: React.RefObject<HTMLDivElement | null>, at: Vec3, range = 
   });
 }
 
-function Npc({ n, offer, target }: { n: NpcDef; offer: boolean; target: boolean }) {
+function Npc({ n, mark, target }: { n: NpcDef; mark: "!" | "?" | null; target: boolean }) {
   const body = useRef<Group>(null);
   const label = useRef<HTMLDivElement>(null);
   const agent = n.kind === "agent";
@@ -106,8 +116,8 @@ function Npc({ n, offer, target }: { n: NpcDef; offer: boolean; target: boolean 
   return (
     <group position={n.position}>
       <group ref={body}>{agent ? <Robot n={n} /> : <Human n={n} />}</group>
-      {offer && <Marker y={head + 1.6} />}
-      {target && <Diamond y={head + (offer ? 3.2 : 1.7)} />}
+      {mark && <Marker y={head + 1.6} glyph={mark} />}
+      {target && <Diamond y={head + (mark ? 3.2 : 1.7)} />}
       <Html ref={label} position={[0, head + 0.7, 0]} center zIndexRange={[10, 0]} pointerEvents="none" style={{ visibility: "hidden", opacity: 0 }}>
         <div className={styles.nameplate} data-kind={n.kind} data-max={lvl >= MAX_LEVEL || undefined}>
           <b>
@@ -176,11 +186,11 @@ function Robot({ n }: { n: NpcDef }) {
   );
 }
 
-function Marker({ y }: { y: number }) {
+function Marker({ y, glyph }: { y: number; glyph: "!" | "?" }) {
   return (
     <Billboard position={[0, y, 0]}>
       <Text font={FONT} fontSize={1.5} anchorY="middle" outlineWidth={0.06} outlineColor="#020616">
-        !
+        {glyph}
         <meshBasicMaterial color={glow(palette.gold, 2.6)} toneMapped={false} />
       </Text>
     </Billboard>

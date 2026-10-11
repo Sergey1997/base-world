@@ -121,7 +121,7 @@ function Plaza() {
           </mesh>
         </group>
       ))}
-      <Sign position={[0, 21, 0]} text="BASE WORLD" sub="Base Plaza · gm" color={palette.baseBright} size={5} logo="/world/brands/base.png" />
+      <Sign position={[0, 21, 0]} text="BASE WORLD" sub="Base Plaza · gm" color={palette.baseBright} size={5} logo="/logo.png" />
     </group>
   );
 }

@@ -119,8 +119,6 @@ function WalletBar({ me, look, flush, wallet, onSettings }: { me: Peer; look: Li
   const peers = usePeers();
   const sync = useGame((s) => s.sync);
   const bags = useGame((s) => holdings(s).wallet);
-  const lp = useGame((s) => holdings(s).lp);
-  const veAero = useGame((s) => s.veAero);
   const eth = bags.ETH;
   const last = useGame((s) => s.txs.find((t) => t.explorer));
   const { fundWallet } = useFundWallet({ onUserExited: () => void sync() });
@@ -136,21 +134,11 @@ function WalletBar({ me, look, flush, wallet, onSettings }: { me: Peer; look: Li
   return (
     <div className={styles.bar} data-dock="wallet">
       <div className={styles.bags}>
-        {(["ETH", "USDC", "AERO", "VIRTUAL"] as Token[]).map((t) => (
+        {(["ETH", "USDC"] as Token[]).map((t) => (
           <span key={t} style={{ color: tokens[t].color }}>
             {fmt(bags[t])} <small>{t}</small>
           </span>
         ))}
-        {lp > 0 && (
-          <span>
-            {fmt(lp)} <small>LP</small>
-          </span>
-        )}
-        {veAero > 0 && (
-          <span>
-            {fmt(veAero)} <small>veAERO</small>
-          </span>
-        )}
       </div>
       <div className={styles.who}>
         <Avatar className={styles.face} src={look.avatar} seed={`${me.id}:${look.seed}`} size={34} />
@@ -208,7 +196,7 @@ function WalletBar({ me, look, flush, wallet, onSettings }: { me: Peer; look: Li
   );
 }
 
-const SENDABLE: Token[] = ["ETH", "USDC", "AERO", "VIRTUAL"];
+const SENDABLE: Token[] = ["ETH", "USDC"];
 
 function Send({ onDone }: { onDone: () => void }) {
   const send = useGame((s) => s.send);

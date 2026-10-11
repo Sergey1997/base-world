@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { type DistrictDef, districts, jumpPads, npcs, orbs, palette, RACE, stations, WORLD_HALF } from "./config";
 import { atlasCaptions, districtOf, layoutCaptions } from "./map-labels";
-import { questById, quests } from "./quests";
+import { objectivesMet, questById, quests } from "./quests";
 import { districtName, live, rewardText, useGame, waypoint } from "./store";
 import styles from "./world.module.css";
 
@@ -119,6 +119,7 @@ export function WorldMap() {
 
   const givers = new Set(quests.filter((q) => s.quests[q.id]?.status === "available").map((q) => q.giver));
   const offerFor = (id: string) => quests.find((q) => q.giver === id && s.quests[q.id]?.status === "available");
+  const turnInFor = (id: string) => quests.find((q) => q.giver === id && s.quests[q.id]?.status === "active" && objectivesMet(q, s.quests[q.id].progress));
   const active = quests.filter((q) => s.quests[q.id]?.status === "active");
   const available = quests.filter((q) => s.quests[q.id]?.status === "available");
   const targets = active.flatMap((q) => {
@@ -305,6 +306,8 @@ export function WorldMap() {
 
           {npcs.map((n) => {
             const offer = offerFor(n.id);
+            const turnIn = turnInFor(n.id);
+            const bang = turnIn ? "?" : offer ? "!" : null;
             return (
               <g
                 key={n.id}
@@ -314,9 +317,9 @@ export function WorldMap() {
                 {...mark({
                   title: n.name,
                   kicker: n.title,
-                  body: offer ? `Has a quest: ${offer.title}` : n.greeting[0],
+                  body: turnIn ? `Quest complete: ${turnIn.title}` : offer ? `Has a quest: ${offer.title}` : n.greeting[0],
                   meta: n.twitter ? `@${n.twitter}` : n.kind === "agent" ? "AI agent" : undefined,
-                  color: offer ? palette.gold : n.color,
+                  color: bang ? palette.gold : n.color,
                   photo: n.photo,
                   x: n.position[0],
                   z: n.position[2],
@@ -328,12 +331,12 @@ export function WorldMap() {
                 ) : (
                   <circle r="6" fill={n.kind === "agent" ? palette.virtuals : "#dce8ff"} />
                 )}
-                <circle r="7.4" fill="none" stroke={offer ? palette.gold : "#fff"} strokeWidth={offer ? 2.2 : 1.6} />
-                {offer && (
+                <circle r="7.4" fill="none" stroke={bang ? palette.gold : "#fff"} strokeWidth={bang ? 2.2 : 1.6} />
+                {bang && (
                   <g transform="translate(6 -8)">
                     <circle r="4.5" fill={palette.gold} stroke="#050b24" strokeWidth="0.8" />
                     <text y="2.8" className={styles.mapBang}>
-                      !
+                      {bang}
                     </text>
                   </g>
                 )}

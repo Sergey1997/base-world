@@ -1,13 +1,37 @@
 import type { Metadata, Viewport } from "next";
+import { SITE } from "@/lib/site";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Base World",
-  description: "A fast, stylized 3D open world for the Base ecosystem. Quests, protocol districts and AI agents — play offline, or online in a shared world with real Base transactions.",
+  metadataBase: new URL(SITE.url),
+  title: { default: SITE.title, template: "%s · Base World" },
+  description: SITE.description,
+  applicationName: SITE.name,
+  keywords: ["Base World", "Base", "Base blockchain", "onchain game", "DeFi", "Aerodrome", "3D open world"],
+  authors: [{ name: "Base World" }],
+  creator: "Base World",
+  category: "games",
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    locale: SITE.locale,
+    url: SITE.url,
+    siteName: SITE.name,
+    title: SITE.title,
+    description: SITE.description,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE.title,
+    description: SITE.description,
+  },
+  robots: { index: true, follow: true },
+  formatDetection: { telephone: false, email: false, address: false },
 };
 
 export const viewport: Viewport = {
   themeColor: "#0052ff",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -331,6 +331,9 @@ export const quests: QuestDef[] = [
 
 export const questById = Object.fromEntries(quests.map((q) => [q.id, q])) as Record<string, QuestDef>;
 
+export const objectivesMet = (q: QuestDef, progress: Record<string, string[] | undefined>) =>
+  q.objectives.every((o) => (progress[o.id]?.length ?? 0) >= (o.count ?? 1));
+
 export function matches(o: Objective, e: QuestEvent): string | null {
   if (o.event !== e.type) return null;
   switch (e.type) {

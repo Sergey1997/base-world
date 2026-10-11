@@ -5,7 +5,7 @@ import { agentReply, parseBankerIntent, personas } from "./agents";
 import { type ChainAdapter, fmt, type Holdings, LIQUIDATION_LTV, mockChain, type Position, type Side, type Spark, type Token, tokens, type TxReceipt, type Venue, venues } from "./chain";
 import { type DistrictId, districtById, npcs, orbs, type PanelId, RACE, SPAWN, stations, type Vec3 } from "./config";
 import { docById } from "./docs";
-import { levelFor, matches, MAX_LEVEL, type QuestEvent, questById, quests, xpCap } from "./quests";
+import { levelFor, matches, MAX_LEVEL, objectivesMet, type QuestEvent, questById, quests, xpCap } from "./quests";
 
 /** Per-frame values written by the scene and read by the HUD without re-rendering. */
 export const live = {
@@ -353,9 +353,9 @@ export const useGame = create<GameState>()(
               progress[o.id] = [...got, key];
               changed = true;
             }
-            if (!changed) continue;
-            set({ quests: { ...get().quests, [q.id]: { ...qs, progress } } });
-            if (q.objectives.every((o) => (progress[o.id]?.length ?? 0) >= (o.count ?? 1))) complete(q.id);
+            if (changed) set({ quests: { ...get().quests, [q.id]: { ...qs, progress } } });
+            const next = changed ? progress : qs.progress;
+            if (objectivesMet(q, next) && e.type === "talk" && e.npc === q.giver) complete(q.id);
           }
         },
 

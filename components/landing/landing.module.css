@@ -34,6 +34,13 @@
   margin-left: clamp(24px, 7vw, 120px);
 }
 
+.mark {
+  display: block;
+  width: 56px;
+  height: 56px;
+  margin: 0 0 16px;
+}
+
 .kicker {
   display: inline-flex;
   gap: 8px;
