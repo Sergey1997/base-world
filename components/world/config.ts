@@ -338,7 +338,7 @@ export const npcs: NpcDef[] = [
   },
 ];
 
-export type PanelId = "swap" | "pool" | "vote" | "launch" | "lend" | "hooks" | "flash" | "aave" | "kickoff" | "docs";
+export type PanelId = "swap" | "pool" | "vote" | "launch" | "lend" | "hooks" | "flash" | "aave" | "kickoff" | "docs" | "arena";
 
 export interface StationDef {
   id: string;
@@ -351,6 +351,7 @@ export interface StationDef {
 
 export const stations: StationDef[] = [
   { id: "station-docs", label: "Base Docs", panel: "docs", position: [-14, 0, 22], color: palette.base, logo: "/world/brands/base.png" },
+  { id: "station-arena", label: "Battleground", panel: "arena", position: [14, 0, 22], color: "#ff4d6d" },
   { id: "station-swap", label: "Swap Terminal", panel: "swap", position: [196, 0, 16], color: palette.aero, logo: "/world/brands/aerodrome.png" },
   { id: "station-pool", label: "Liquidity Pool", panel: "pool", position: [234, 0, 22], color: palette.cyan, logo: "/world/brands/aerodrome.png" },
   { id: "station-vote", label: "Gauge Voting Booth", panel: "vote", position: [272, 0, 16], color: palette.gold, logo: "/world/brands/aerodrome.png" },

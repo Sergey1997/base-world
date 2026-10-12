@@ -25,6 +25,7 @@ export function districtOf(p: Vec3) {
 
 export const SHORT_STATION: Record<string, string> = {
   "station-docs": "Docs",
+  "station-arena": "Arena",
   "station-swap": "Swap",
   "station-pool": "Pool",
   "station-vote": "Vote",

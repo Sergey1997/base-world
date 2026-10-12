@@ -32,7 +32,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 let client: SupabaseClient | null = null;
-const supabase = () => (client ??= createClient(SUPABASE_URL!, SUPABASE_KEY!, { auth: { persistSession: false } }));
+export const supabase = () => (client ??= createClient(SUPABASE_URL!, SUPABASE_KEY!, { auth: { persistSession: false } }));
 
 /** Latest pose per peer, written by the socket and read every frame without touching React. */
 const poses = new Map<string, Pose>();

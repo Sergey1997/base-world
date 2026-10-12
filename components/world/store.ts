@@ -139,6 +139,8 @@ interface GameState extends Persisted {
   repay(venue: Venue, cash: number): Promise<void>;
   send(to: string, token: Token, amount: number): Promise<boolean>;
   flashLoan(route: string[]): Promise<void>;
+  /** Battleground win: XP only; staked winnings are paid by the escrow contract. */
+  winDuel(xp: number, body: string): void;
   chat(agentId: string, text: string): void;
   reset(): void;
 }
@@ -401,6 +403,10 @@ export const useGame = create<GameState>()(
             award(25);
           }
           get().emit({ type: "action", action: `doc:${id}` });
+        },
+        winDuel: (xp, body) => {
+          get().toast({ tone: "reward", title: "Duel won", body: `${body} · +${xp} XP` });
+          award(xp);
         },
         setNearby: (id) => get().nearby !== id && set({ nearby: id }),
         setDistrict: (id) => {

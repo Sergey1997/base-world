@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Arena } from "@/components/battle/arena";
 import { personas } from "./agents";
 import { fmt, hooks, type Side, type Token, tokens, type Venue, venues } from "./chain";
 import { useShallow } from "zustand/react/shallow";
@@ -30,6 +31,7 @@ const logos: Record<PanelId, string> = {
   aave: "/world/brands/aave.png",
   kickoff: "/world/brands/kickoff.png",
   docs: "/world/brands/base.png",
+  arena: "/icon.png",
 };
 
 const titles: Record<PanelId, [string, string]> = {
@@ -43,9 +45,15 @@ const titles: Record<PanelId, [string, string]> = {
   aave: [venues.aave.name, "Aave V3 · supply ETH, borrow USDC"],
   kickoff: ["Kickoff Launchpad", "Kickoff · launch a Spark, trade the curve"],
   docs: ["Base Docs", "The short version of docs.base.org"],
+  arena: ["Battleground", "1v1 duels for ETH, or spar a bot"],
 };
 
 export function Panel({ id }: { id: PanelId }) {
+  if (id === "arena") return <Arena />;
+  return <ProtocolPanel id={id} />;
+}
+
+function ProtocolPanel({ id }: { id: PanelId }) {
   const close = useGame((s) => s.close);
   const online = useGame((s) => !!s.real);
   const [tab, setTab] = useState(id);

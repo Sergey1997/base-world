@@ -5,6 +5,7 @@ import { Bloom, EffectComposer, ToneMapping, Vignette } from "@react-three/postp
 import { Physics } from "@react-three/rapier";
 import { ToneMappingMode } from "postprocessing";
 import { type ReactNode, Suspense } from "react";
+import { useBattle } from "@/components/battle/store";
 import { Actors } from "./actors";
 import { useSound } from "./audio";
 import { Districts } from "./districts";
@@ -18,9 +19,10 @@ import styles from "./world.module.css";
 export default function Game({ scene, overlay }: { scene?: ReactNode; overlay?: ReactNode }) {
   useKeyboard();
   useSound();
+  const fighting = useBattle((s) => s.mode === "bot" || s.duel?.status === "live" || s.duel?.status === "done");
   return (
     <div className={styles.root}>
-      <Canvas shadows dpr={[1, 1.5]} camera={{ fov: 60, near: 0.1, far: 2000 }} gl={{ antialias: false, powerPreference: "high-performance" }}>
+      <Canvas frameloop={fighting ? "never" : "always"} shadows dpr={[1, 1.5]} camera={{ fov: 60, near: 0.1, far: 2000 }} gl={{ antialias: false, powerPreference: "high-performance" }}>
         <Suspense fallback={null}>
           <Physics gravity={[0, -30, 0]}>
             <Environment />

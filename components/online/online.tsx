@@ -3,8 +3,9 @@
 import { type ConnectedWallet, useFundWallet, usePrivy, useWallets } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { type Address, createWalletClient, custom } from "viem";
+import { type Address, createPublicClient, createWalletClient, custom, http } from "viem";
 import { base } from "viem/chains";
+import { connectPvp, type PvpLink } from "@/components/battle/link";
 import { fmt, type Token, tokens } from "@/components/world/chain";
 import { WorldClient } from "@/components/world/client";
 import { Loader } from "@/components/world/loader";
@@ -13,7 +14,7 @@ import { holdings, type Cloud, useGame } from "@/components/world/store";
 import { AccountSettings } from "./account";
 import { Avatar } from "./avatar";
 import { connectCloud } from "./cloud";
-import { colorFor, Others, type Peer, useMultiplayer, usePeers } from "./multiplayer";
+import { colorFor, Others, type Peer, supabase, useMultiplayer, usePeers } from "./multiplayer";
 import { ENTER, PRIVY_ID } from "./privy";
 import styles from "./online.module.css";
 
@@ -58,6 +59,33 @@ interface Live {
   cloud: Cloud;
   flush: () => Promise<void>;
   chain: ReturnType<typeof baseChain>;
+  pvp: PvpLink;
+}
+
+/** Wires staked duels to this session: authed API calls, the wallet, and private duel topics. */
+function duelLink(account: Address, wallet: ReturnType<typeof createWalletClient>, cloud: Cloud, getToken: () => Promise<string | null>): PvpLink {
+  return {
+    account,
+    wallet,
+    chain: createPublicClient({ chain: base, transport: http(RPC) }),
+    async api(path, init) {
+      const r = await fetch(path, {
+        method: init?.method ?? "GET",
+        headers: { Authorization: `Bearer ${await getToken()}`, "content-type": "application/json" },
+        body: init?.body === undefined ? undefined : JSON.stringify(init.body),
+      });
+      if (r.status === 204) return null as never;
+      const data = await r.json().catch(() => null);
+      if (!r.ok) throw new Error(data?.error ?? `Request failed (${r.status})`);
+      return data;
+    },
+    listen(topic, on) {
+      const channel = supabase().channel(`duel:${topic}`);
+      channel.on("broadcast", { event: "*" }, (m) => on(m.event, (m.payload ?? {}) as Record<string, unknown>)).subscribe();
+      return () => void supabase().removeChannel(channel);
+    },
+    logTx: (hash, summary) => cloud.logTx({ hash, summary, at: Date.now(), explorer: `https://basescan.org/tx/${hash}` }, "duel"),
+  };
 }
 
 /** Mounted once per wallet: loads the cloud save and wires the wallet into a real Base adapter. */
@@ -73,7 +101,7 @@ function Session({ wallet }: { wallet: ConnectedWallet }) {
     Promise.all([connectCloud(deps.getAccessToken, address), deps.wallet.getEthereumProvider()])
       .then(([{ cloud, name, avatar, seed, flush }, provider]) => {
         const client = createWalletClient({ account: address, chain: base, transport: custom(provider) });
-        setSession({ me: { id, name, color: colorFor(id) }, look: { avatar, seed }, cloud, flush, chain: baseChain(client, address, RPC) });
+        setSession({ me: { id, name, color: colorFor(id) }, look: { avatar, seed }, cloud, flush, chain: baseChain(client, address, RPC), pvp: duelLink(address, client, cloud, deps.getAccessToken) });
       })
       .catch((e: Error) => setError(e.message));
   }, [deps, id]);
@@ -88,6 +116,10 @@ function World({ session, wallet }: { session: Live; wallet: ConnectedWallet }) 
   const [name, setName] = useState(session.me.name);
   const me = { ...session.me, name };
   useMultiplayer(me);
+  useEffect(() => {
+    connectPvp(session.pvp);
+    return () => connectPvp(null);
+  }, [session.pvp]);
   useEffect(() => {
     if (window.location.hash !== "#settings") return;
     setSettings(true);

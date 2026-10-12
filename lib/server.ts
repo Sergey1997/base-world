@@ -1,7 +1,7 @@
 import { PrivyClient } from "@privy-io/node";
 import { createClient } from "@supabase/supabase-js";
 
-const lazy = <T>(make: () => T) => {
+export const lazy = <T>(make: () => T) => {
   let value: T | undefined;
   return () => (value ??= make());
 };
@@ -13,7 +13,7 @@ export const db = lazy(() =>
   createClient(env("NEXT_PUBLIC_SUPABASE_URL"), env("SUPABASE_SECRET_KEY"), { auth: { persistSession: false, autoRefreshToken: false } }),
 );
 
-function env(name: string) {
+export function env(name: string) {
   const value = process.env[name];
   if (!value) throw new HttpError(503, `Online mode is not configured: set ${name} in .env.local`);
   return value;
